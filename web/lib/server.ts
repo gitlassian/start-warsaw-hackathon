@@ -13,3 +13,10 @@ export async function apiGet<T>(path: string, from: string): Promise<T> {
   if (!res.ok) throw new Error(`API ${res.status} on ${path}`);
   return res.json();
 }
+
+/** Server-side GET to a public endpoint; null on any failure so the page can fall back. */
+export async function apiPublic<T>(path: string): Promise<T | null> {
+  return fetch(API_URL + path)
+    .then((res) => (res.ok ? res.json() : null))
+    .catch(() => null);
+}

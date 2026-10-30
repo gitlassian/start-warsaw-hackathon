@@ -2,3 +2,6 @@ api/.venv/
 api/.env
 __pycache__/
 .pytest_cache/
+.playwright-mcp/
+.impeccable/review/
+.impeccable/mocks/

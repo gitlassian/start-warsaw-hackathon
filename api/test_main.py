@@ -120,6 +120,10 @@ def test_album_flow(setup):
     assert [p["can_delete"] for p in album["photos"]] == [False, True]
     assert stranger.post(f"/api/codes/NOPE00/join").status_code == 404
 
+    teaser = TestClient(main.app).get(f"/api/codes/{ev['code']}/teaser").json()  # no session
+    assert (teaser["title"], teaser["photos"], teaser["people"]) == ("Party", 2, 2)
+    assert "code" not in teaser and "id" not in teaser
+
     assert guest.delete(f"/api/photos/{owner_photo['id']}").status_code == 403
     assert stranger.delete(f"/api/photos/{photo['id']}").status_code == 404
     assert owner.delete(f"/api/photos/{photo['id']}").status_code == 200
@@ -208,3 +212,35 @@ def _item(photo_id, taken_at, cos_to_first):
 def test_capture_time_decides_how_similar_duplicates_must_be(t1, t2, cos, duplicate):
     groups = photo_ai.duplicate_groups([_item(1, t1, 1.0), _item(2, t2, cos)])
     assert bool(groups) is duplicate
+
+
+class FakeGoogle:
+    def __init__(self, aud, email_verified=True):
+        self.aud, self.email_verified = aud, email_verified
+
+    def __call__(self, url, **kw):
+        class R:
+            ok = True
+
+        r = R()
+        if "tokeninfo" in url:
+            r.json = lambda: {"aud": self.aud, "sub": "g-42"}
+        else:
+            r.json = lambda: {"sub": "g-42", "email": "new@x.com", "name": "New", "email_verified": self.email_verified}
+        return r
+
+
+def test_google_login_checks_audience(setup, monkeypatch):
+    monkeypatch.setattr(main, "GOOGLE_CLIENT_ID", "ours.apps.googleusercontent.com")
+    client = TestClient(main.app)
+
+    monkeypatch.setattr(main.requests, "get", FakeGoogle("someone-elses-app"))
+    assert client.post("/api/auth/google", json={"access_token": "t"}).status_code == 401
+
+    monkeypatch.setattr(main.requests, "get", FakeGoogle("ours.apps.googleusercontent.com", email_verified=False))
+    assert client.post("/api/auth/google", json={"access_token": "t"}).status_code == 401
+
+    monkeypatch.setattr(main.requests, "get", FakeGoogle("ours.apps.googleusercontent.com"))
+    res = client.post("/api/auth/google", json={"access_token": "t"})
+    assert res.status_code == 200 and res.json()["email"] == "new@x.com"
+    assert client.get("/api/me").json()["name"] == "New"  # session cookie was set

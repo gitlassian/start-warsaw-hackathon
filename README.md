@@ -33,8 +33,8 @@ Google only allows sign-in from `localhost` or HTTPS origins, so expose the dev 
 
 ## How it works
 
-- **Auth:** Google Identity Services gives the browser an ID token → `POST /api/auth/google` verifies it and sets an
-  httpOnly `session` cookie (JWT, 30 days).
+- **Auth:** our own "Continue with Google" button opens Google's OAuth popup (GIS token client) → `POST /api/auth/google`
+  checks the access token was issued to our client ID, reads the profile, and sets an httpOnly `session` cookie (JWT, 30 days).
 - **Uploads:** browser asks `POST /api/uploads` for presigned PUT URLs, uploads the original plus a 600px thumbnail
   straight to S3, then registers the photo. Originals are kept; "Save" downloads the original.
 - **Joining:** each event has a 6-character code; the QR encodes `https://<host>/join/<CODE>`.

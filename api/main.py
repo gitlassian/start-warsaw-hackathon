@@ -11,10 +11,9 @@ import jwt
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
 from pydantic import AwareDatetime, BaseModel, Field
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, LargeBinary, String, Text, create_engine, select
+import requests
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, LargeBinary, String, Text, create_engine, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 import photo_ai
@@ -214,20 +213,37 @@ def event_by_code(code: str, s: Session) -> Event:
 
 
 class GoogleIn(BaseModel):
-    credential: str
+    access_token: str
+
+
+def google_profile(access_token: str) -> dict:
+    """Checks the token was issued to *our* client (else any Google app's token would log in), then reads the profile."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(500, "GOOGLE_CLIENT_ID is not configured")
+    try:
+        token = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo", params={"access_token": access_token}, timeout=10
+        )
+        if not token.ok or token.json().get("aud") != GOOGLE_CLIENT_ID:
+            raise HTTPException(401, "Invalid Google sign-in")
+        profile = requests.get(
+            "https://openidconnect.googleapis.com/v1/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        raise HTTPException(502, "Couldn't reach Google. Try again.")
+    info = profile.json() if profile.ok else {}
+    if info.get("sub") != token.json().get("sub"):
+        raise HTTPException(401, "Invalid Google sign-in")
+    if not info.get("email_verified"):
+        raise HTTPException(401, "Google email is not verified")
+    return info
 
 
 @api.post("/auth/google")
 def google_login(body: GoogleIn, response: Response, s: Session = Depends(db)):
-    if not GOOGLE_CLIENT_ID:
-        # Without an audience google-auth would accept tokens minted for any app.
-        raise HTTPException(500, "GOOGLE_CLIENT_ID is not configured")
-    try:
-        info = id_token.verify_oauth2_token(body.credential, google_requests.Request(), GOOGLE_CLIENT_ID)
-    except ValueError:
-        raise HTTPException(401, "Invalid Google sign-in")
-    if not info.get("email_verified"):
-        raise HTTPException(401, "Google email is not verified")
+    info = google_profile(body.access_token)
     user = s.scalar(select(User).where(User.google_sub == info["sub"])) or User(google_sub=info["sub"])
     user.email = info["email"]
     user.name = info.get("name") or info["email"]
@@ -435,6 +451,20 @@ def search_photos(
 def preview_code(code: str, user: User = Depends(current_user), s: Session = Depends(db)):
     e = event_by_code(code, s)
     return {**event_out(e, user), "joined": s.get(Member, (e.id, user.id)) is not None}
+
+
+@api.get("/codes/{code}/teaser")
+def code_teaser(code: str, s: Session = Depends(db)):
+    """Public: what a guest sees on the sign-in screen after scanning. Cover and counts only, never the photos."""
+    e = event_by_code(code, s)
+    return {
+        "title": e.title,
+        "starts_at": e.starts_at.isoformat(),
+        "ends_at": e.ends_at.isoformat(),
+        "cover_url": get_url(e.cover_key) if e.cover_key else None,
+        "photos": s.scalar(select(func.count()).where(Photo.event_id == e.id)),
+        "people": s.scalar(select(func.count()).where(Member.event_id == e.id)),
+    }
 
 
 @api.post("/codes/{code}/join")
