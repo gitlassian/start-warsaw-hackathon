@@ -16,7 +16,7 @@ async function Content() {
 
   return (
     <>
-      <TopBar title="RollCall" right={<Account user={me} />} />
+      <TopBar title={<img src="/logo.svg" alt="RollCall" className="h-8 dark:invert" />} right={<Account user={me} />} />
       {events.length ? (
         <ul className="flex flex-col px-2">
           {events.map((e) => (
