@@ -1,5 +1,7 @@
+import logging
 import os
 import secrets
+import threading
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -8,12 +10,16 @@ import boto3
 import jwt
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from pydantic import AwareDatetime, BaseModel, Field
-from sqlalchemy import DateTime, ForeignKey, String, Text, create_engine, select
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, LargeBinary, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+
+import photo_ai
+
+log = logging.getLogger("rollcall")
 
 env = os.environ.get
 DATABASE_URL = env("DATABASE_URL", "postgresql+psycopg://rollcall:rollcall@localhost:5432/rollcall")
@@ -95,6 +101,18 @@ class Photo(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class PhotoFeature(Base):
+    """What duplicate detection and search need per photo; filled in after upload."""
+
+    __tablename__ = "photo_features"
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id", ondelete="CASCADE"), primary_key=True)
+    phash: Mapped[str] = mapped_column(String(32))
+    sharpness: Mapped[float] = mapped_column(Float)
+    pixels: Mapped[int] = mapped_column(BigInteger)
+    taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # EXIF time; NULL = unknown
+    embedding: Mapped[bytes] = mapped_column(LargeBinary)
+
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(engine)
 
@@ -107,6 +125,8 @@ async def lifespan(_app):
         s3.head_bucket(Bucket=S3_BUCKET)
     except ClientError:
         s3.create_bucket(Bucket=S3_BUCKET)
+    # Load the CLIP models in the background so the first search doesn't wait for them.
+    threading.Thread(target=photo_ai.embedder.warm_up, daemon=True).start()
     yield
 
 
@@ -310,7 +330,9 @@ class PhotoIn(BaseModel):
 
 
 @api.post("/events/{event_id}/photos")
-def add_photo(event_id: int, body: PhotoIn, user: User = Depends(current_user), s: Session = Depends(db)):
+def add_photo(
+    event_id: int, body: PhotoIn, background: BackgroundTasks, user: User = Depends(current_user), s: Session = Depends(db)
+):
     e = member_event(event_id, user, s)
     # shortcut: presigned PUT can't cap size, so oversized originals are rejected here after upload.
     if check_upload(body.key, user) > MAX_PHOTO_BYTES:
@@ -321,6 +343,7 @@ def add_photo(event_id: int, body: PhotoIn, user: User = Depends(current_user), 
     p = Photo(event_id=e.id, user_id=user.id, key=body.key, thumb_key=body.thumb_key)
     s.add(p)
     s.commit()
+    background.add_task(analyze_event, e.id)
     return photo_out(p, user, user, e)
 
 
@@ -337,6 +360,75 @@ def delete_photo(photo_id: int, user: User = Depends(current_user), s: Session =
     s.delete(p)
     s.commit()
     return {"ok": True}
+
+
+_analysis_lock = threading.Lock()
+HEAD_BYTES = 128 * 1024  # an original's EXIF block sits in its first bytes
+
+
+def _read(key: str, byte_range: str | None = None) -> bytes:
+    params = {"Bucket": S3_BUCKET, "Key": key}
+    if byte_range:
+        params["Range"] = byte_range
+    return s3.get_object(**params)["Body"].read()
+
+
+def analyze_event(event_id: int) -> None:
+    """Compute features for every photo of the event that has none yet. Safe to call concurrently."""
+    with _analysis_lock, SessionLocal() as s:
+        missing = s.scalars(
+            select(Photo)
+            .outerjoin(PhotoFeature, PhotoFeature.photo_id == Photo.id)
+            .where(Photo.event_id == event_id, PhotoFeature.photo_id.is_(None))
+        ).all()
+        for p in missing:
+            try:
+                thumb = _read(p.thumb_key)
+                head = thumb[:HEAD_BYTES] if p.thumb_key == p.key else _read(p.key, f"bytes=0-{HEAD_BYTES - 1}")
+                a = photo_ai.analyze(thumb, head)
+            except Exception:  # one unreadable file must not take the whole album down
+                log.exception("Could not analyze photo %s", p.id)
+                continue
+            taken_at = datetime.fromtimestamp(a.taken_at, timezone.utc) if a.taken_at else None
+            s.add(PhotoFeature(photo_id=p.id, phash=a.phash, sharpness=a.sharpness, pixels=a.pixels,
+                               taken_at=taken_at, embedding=a.embedding))
+            s.commit()
+
+
+def album_items(event_id: int, s: Session) -> list[photo_ai.Item]:
+    analyze_event(event_id)  # covers photos uploaded before the analysis existed or that failed earlier
+    rows = s.scalars(
+        select(PhotoFeature).join(Photo, Photo.id == PhotoFeature.photo_id)
+        .where(Photo.event_id == event_id).order_by(PhotoFeature.photo_id)
+    )
+    return [
+        photo_ai.Item(r.photo_id, r.phash, r.sharpness, r.pixels, r.taken_at and r.taken_at.timestamp(), r.embedding)
+        for r in rows
+    ]
+
+
+@api.get("/events/{event_id}/duplicates")
+def duplicates(event_id: int, user: User = Depends(current_user), s: Session = Depends(db)):
+    """Near-duplicate groups: the sharpest shot is kept, the rest are listed as dropped."""
+    member_event(event_id, user, s)
+    groups = [{"keep": keep, "drop": drop} for keep, drop in photo_ai.duplicate_groups(album_items(event_id, s))]
+    return {"groups": groups, "hidden": sum(len(g["drop"]) for g in groups)}
+
+
+@api.get("/events/{event_id}/search")
+def search_photos(
+    event_id: int,
+    q: str = Query(min_length=1, max_length=200),
+    all: bool = False,
+    k: int = Query(12, ge=1, le=100),
+    user: User = Depends(current_user),
+    s: Session = Depends(db),
+):
+    """Photos matching a text query, best first. Duplicates are skipped unless `all` is set."""
+    member_event(event_id, user, s)
+    items = album_items(event_id, s)
+    skip = set() if all else {d for _, drop in photo_ai.duplicate_groups(items) for d in drop}
+    return {"results": [{"id": i, "score": round(score, 4)} for i, score in photo_ai.search_items(items, q.strip(), k, skip)]}
 
 
 @api.get("/codes/{code}")

@@ -11,6 +11,11 @@ dependencies = [
     "google-auth>=2.35",
     "requests>=2.32",
     "pyjwt>=2.9",
+    "numpy",
+    "pillow",
+    "pillow-heif",
+    "imagehash",
+    "sentence-transformers",
 ]
 
 [dependency-groups]

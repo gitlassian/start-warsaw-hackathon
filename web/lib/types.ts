@@ -21,3 +21,6 @@ export type Photo = {
 };
 
 export type EventDetail = EventItem & { photos: Photo[] };
+
+export type SearchResult = { results: { id: number; score: number }[] };
+export type DuplicatesResult = { groups: { keep: number; drop: number[] }[]; hidden: number };

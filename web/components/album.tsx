@@ -1,10 +1,10 @@
 "use client";
 
-import { Download, Trash2, X } from "lucide-react";
+import { Download, Search, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { api } from "@/lib/client";
-import type { Photo } from "@/lib/types";
+import type { DuplicatesResult, Photo, SearchResult } from "@/lib/types";
 
 async function save(photo: Photo) {
   // On phones the share sheet's "Save Image" puts it in the camera roll; a download would land in Files.
@@ -20,12 +20,65 @@ async function save(photo: Photo) {
   location.href = photo.download_url;
 }
 
-export function Album({ photos }: { photos: Photo[] }) {
+export function Album({ eventId, photos: all }: { eventId: number; photos: Photo[] }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const strip = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<number[] | null>(null); // photo ids, best match first
+  const [dropped, setDropped] = useState<Set<number> | null>(null); // duplicates hidden; null = showing all
+  const [busy, setBusy] = useState(false);
+
+  // Search results replace the grid (best match first); hidden duplicates are removed from either view.
+  const byId = new Map(all.map((p) => [p.id, p]));
+  const base = hits ? hits.flatMap((id) => byId.get(id) ?? []) : all;
+  const photos = dropped ? base.filter((p) => !dropped.has(p.id)) : base;
   const current = photos[index];
+
+  async function runSearch(q: string, hideDuplicates: boolean) {
+    if (!q) return setHits(null);
+    const { results } = await api<SearchResult>(
+      `/api/events/${eventId}/search?q=${encodeURIComponent(q)}${hideDuplicates ? "" : "&all=true"}`,
+    );
+    setHits(results.map((r) => r.id));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const q = query.trim();
+    setBusy(true);
+    try {
+      await runSearch(q, dropped !== null);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleDuplicates() {
+    if (dropped) {
+      setDropped(null);
+      if (hits) await runSearch(query.trim(), false).catch(() => {});
+      return;
+    }
+    setBusy(true);
+    try {
+      const { groups } = await api<DuplicatesResult>(`/api/events/${eventId}/duplicates`);
+      setDropped(new Set(groups.flatMap((g) => g.drop)));
+      if (hits) await runSearch(query.trim(), true);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function clearSearch() {
+    setQuery("");
+    setHits(null);
+  }
 
   function open(i: number) {
     setIndex(i);
@@ -44,7 +97,7 @@ export function Album({ photos }: { photos: Photo[] }) {
     }
   }
 
-  if (!photos.length) {
+  if (!all.length) {
     return (
       <p className="px-4 py-16 text-center text-muted">
         No photos yet.
@@ -56,6 +109,44 @@ export function Album({ photos }: { photos: Photo[] }) {
 
   return (
     <>
+      <div className="px-4 pb-3">
+        <form onSubmit={submit} role="search" className="relative">
+          <Search size={20} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search photos: dog, laptop, sunset…"
+            aria-label="Search photos"
+            className="field pr-11 pl-11"
+            enterKeyHint="search"
+          />
+          {query ? (
+            <button type="button" onClick={clearSearch} className="btn-icon absolute top-1/2 right-0.5 -translate-y-1/2" aria-label="Clear search">
+              <X size={20} strokeWidth={1.75} />
+            </button>
+          ) : null}
+        </form>
+        <div className="mt-2 flex items-center gap-3 text-sm">
+          <button
+            type="button"
+            onClick={toggleDuplicates}
+            disabled={busy}
+            aria-pressed={dropped !== null}
+            className={`rounded-full border px-3 py-1.5 font-medium transition-colors disabled:opacity-40 ${
+              dropped ? "border-fg bg-fg text-bg" : "border-line text-fg"
+            }`}
+          >
+            Hide duplicates
+          </button>
+          <span className="text-muted tabular-nums" aria-live="polite">
+            {busy ? "Working…" : dropped ? `${dropped.size} hidden` : hits ? `${photos.length} found` : ""}
+          </span>
+        </div>
+      </div>
+
+      {!photos.length ? <p className="px-4 py-16 text-center text-muted">No matching photos.</p> : null}
+
       <ul className="grid grid-cols-3 gap-0.5">
         {photos.map((p, i) => (
           <li key={p.id}>

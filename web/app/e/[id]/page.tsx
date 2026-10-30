@@ -29,7 +29,7 @@ async function Content({ params }: PageProps<"/e/[id]">) {
           Photos <span className="text-sm font-normal text-muted tabular-nums">{count || ""}</span>
         </h2>
       </div>
-      <Album photos={event.photos} />
+      <Album eventId={event.id} photos={event.photos} />
       <BottomBar>
         <Uploader eventId={event.id} />
       </BottomBar>
