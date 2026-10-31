@@ -134,7 +134,7 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
             disabled={busy}
             aria-pressed={dropped !== null}
             className={`rounded-full border px-3 py-1.5 font-medium transition-colors disabled:opacity-40 ${
-              dropped ? "border-fg bg-fg text-bg" : "border-line text-fg"
+              dropped ? "border-accent bg-accent text-on-accent" : "border-line text-fg"
             }`}
           >
             Hide duplicates
@@ -192,7 +192,7 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
 
           <div className="flex justify-center gap-2 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
             {current ? (
-              <button onClick={() => save(current)} className="btn bg-white text-black">
+              <button onClick={() => save(current)} className="btn bg-accent text-on-accent">
                 <Download size={20} strokeWidth={1.75} /> Save
               </button>
             ) : null}
