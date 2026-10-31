@@ -42,15 +42,15 @@ drop in their photos, and everyone can browse and save the full set afterwards. 
 
 ## What you get
 
-| | Feature | Details |
-| --- | --- | --- |
-| 🎟️ | **Join in seconds** | Every event has a 6-character code and a QR that opens `/join/<CODE>`. A guest goes from scan to uploading in under a minute. |
-| 📸 | **Batch uploads** | Pick many photos at once, or shoot with the in-app camera. Photos and videos (up to 200 MB) upload straight to S3 with progress and plain failure messages. HEIC photos get a JPEG preview. |
-| 🗂️ | **One shared album** | Members see everything, and the album updates live as others upload. "Save" always downloads the **original**. |
-| 🔎 | **Search by meaning** | Type "dog", "sunset" or "laptop" (in 50+ languages) and CLIP finds matching photos, no tags needed. |
-| 🧹 | **Hide duplicates** | Near-identical shots and re-sent copies are grouped, and the sharpest one is kept in front. |
-| 🔐 | **Private by default** | Only members see an event. Authors delete their own photos, the host can delete any, and the host can edit or delete the event. |
-| 🌗 | **Built for phones** | Mobile-first, installable web app, 44 px touch targets, light and dark mode, respects reduced motion. |
+| Feature | Details |
+| --- | --- |
+| **Join in seconds** | Every event has a 6-character code and a QR that opens `/join/<CODE>`. A guest goes from scan to uploading in under a minute. |
+| **Batch uploads** | Pick many photos at once, or shoot with the in-app camera. Photos and videos (up to 200 MB) upload straight to S3 with progress and plain failure messages. HEIC photos get a JPEG preview. |
+| **One shared album** | Members see everything, and the album updates live as others upload. "Save" always downloads the **original**. |
+| **Search by meaning** | Type "dog", "sunset" or "laptop" (in 50+ languages) and CLIP finds matching photos, no tags needed. |
+| **Hide duplicates** | Near-identical shots and re-sent copies are grouped, and the sharpest one is kept in front. |
+| **Private by default** | Only members see an event. Authors delete their own photos, the host can delete any, and the host can edit or delete the event. |
+| **Built for phones** | Mobile-first, installable web app, 44 px touch targets, light and dark mode, respects reduced motion. |
 
 ## How it works
 
