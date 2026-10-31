@@ -57,6 +57,10 @@ class FakeS3:
     def generate_presigned_url(self, op, Params, ExpiresIn):
         return f"{main.S3_ENDPOINT}/{Params['Bucket']}/{Params['Key']}?sig"
 
+    def generate_presigned_post(self, Bucket, Key, Fields, Conditions, ExpiresIn):
+        self.last_post_conditions = Conditions
+        return {"url": f"{main.S3_ENDPOINT}/{Bucket}", "fields": {"key": Key, **Fields}}
+
     def head_object(self, Bucket, Key):
         return {"ContentLength": len(self.objects[Key]) if Key in self.objects else 10}
 
@@ -79,6 +83,7 @@ def setup(monkeypatch):
     main.Base.metadata.create_all(engine)
     monkeypatch.setattr(main, "SessionLocal", sessionmaker(engine))
     monkeypatch.setattr(main, "s3", FakeS3())
+    main._rates.clear()
     monkeypatch.setattr(photo_ai, "embedder", FakeEmbedder())
     with main.SessionLocal() as s:
         s.add_all([main.User(id=i, google_sub=str(i), email=f"{i}@x.com", name=f"U{i}") for i in (1, 2, 3)])
@@ -108,7 +113,7 @@ def test_album_flow(setup):
     assert stranger.get(f"/api/events/{ev['id']}").status_code == 404
 
     assert guest.get(f"/api/codes/{ev['code'].lower()}").json()["joined"] is False
-    assert guest.post(f"/api/codes/{ev['code']}/join").json() == {"id": ev["id"]}
+    assert guest.post(f"/api/codes/{ev['code']}/join").json() == {"id": ev["id"], "code": ev["code"]}
     assert guest.post(f"/api/codes/{ev['code']}/join").status_code == 200  # idempotent
 
     up = guest.post("/api/uploads", json={"types": ["image/jpeg", "image/jpeg"]}).json()
@@ -135,6 +140,33 @@ def test_album_flow(setup):
     assert len(guest.get(f"/api/events/{ev['id']}").json()["photos"]) == 1
     assert [e["id"] for e in guest.get("/api/events").json()] == [ev["id"]]
 
+
+
+@pytest.mark.parametrize("changes", [
+    {"title": ""},
+    {"title": " \n\t "},
+    {"title": "И" * 61},
+    {"description": "О" * 501},
+])
+def test_event_text_limits_apply_to_creation_and_editing(setup, changes):
+    owner = setup(1)
+    ev = owner.post("/api/events", json=EVENT).json()
+    body = {**EVENT, **changes}
+    assert owner.post("/api/events", json=body).status_code == 422
+    assert owner.put(f"/api/events/{ev['id']}", json=body).status_code == 422
+    assert owner.get(f"/api/events/{ev['id']}").json()["title"] == EVENT["title"]
+    assert len(owner.get("/api/events").json()) == 1
+
+
+def test_event_text_accepts_boundaries_and_trims_whitespace(setup):
+    owner = setup(1)
+    body = {**EVENT, "title": "  " + "И" * 60 + "  ", "description": "  " + "О" * 500 + "  "}
+    response = owner.post("/api/events", json=body)
+    assert response.status_code == 200
+    ev = response.json()
+    assert ev["title"] == "И" * 60 and ev["description"] == "О" * 500
+    edited = owner.put(f"/api/events/{ev['id']}", json={**body, "description": " \n "})
+    assert edited.status_code == 200 and edited.json()["description"] == ""
 
 
 def test_host_edits_and_deletes_event(setup):
@@ -457,6 +489,92 @@ def test_download_zips_the_originals_without_duplicates(setup):
 
     assert stranger.get(url).status_code == 404
     assert TestClient(main.app).get(url).status_code == 401
+
+
+def test_photo_metadata_identifies_uploader_and_upload_time(setup):
+    owner, guest = setup(1), setup(2)
+    ev = owner.post("/api/events", json=EVENT).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    with main.SessionLocal() as s:
+        s.get(main.User, 1).name = "Alex"
+        s.get(main.User, 2).name = "Alex"
+        s.commit()
+    upload(owner, ev["id"], scene(81, 0))
+    upload(guest, ev["id"], scene(82, 1))
+    photos = owner.get(f"/api/events/{ev['id']}").json()["photos"]
+    assert {p["author_id"] for p in photos} == {1, 2}
+    assert {p["author"] for p in photos} == {"Alex"}
+    assert all(datetime.fromisoformat(p["created_at"]).utcoffset().total_seconds() == 0 for p in photos)
+
+
+def test_bulk_delete_checks_every_permission_before_deleting(setup):
+    owner, guest = setup(1), setup(2)
+    ev = owner.post("/api/events", json=EVENT).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    mine = upload(guest, ev["id"], scene(83, 0))
+    theirs = upload(owner, ev["id"], scene(84, 1))
+    url = f"/api/events/{ev['id']}/photos/delete"
+    assert guest.post(url, json={"photo_ids": [mine, theirs]}).status_code == 403
+    assert main.s3.deleted == []
+    assert len(guest.get(f"/api/events/{ev['id']}").json()["photos"]) == 2
+    result = guest.post(url, json={"photo_ids": [mine, mine]})
+    assert result.status_code == 200 and result.json() == {"deleted": [mine]}
+    assert [p["id"] for p in owner.get(f"/api/events/{ev['id']}").json()["photos"]] == [theirs]
+    with main.SessionLocal() as s:
+        assert s.get(main.PhotoFeature, mine) is None
+
+
+def test_host_can_bulk_delete_guest_uploads_and_all_media_copies(setup):
+    owner, guest = setup(1), setup(2)
+    ev = owner.post("/api/events", json=EVENT).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    with main.SessionLocal() as s:
+        heic = main.Photo(event_id=ev["id"], user_id=2, key="u/2/a.heic", thumb_key="u/2/a.heic.thumb.jpg")
+        video = main.Photo(event_id=ev["id"], user_id=2, key="u/2/b.mp4", thumb_key="u/2/b.jpg")
+        s.add_all([heic, video])
+        s.commit()
+        ids = [heic.id, video.id]
+    result = owner.post(f"/api/events/{ev['id']}/photos/delete", json={"photo_ids": ids})
+    assert result.status_code == 200 and set(result.json()["deleted"]) == set(ids)
+    assert set(main.s3.deleted) == {"u/2/a.heic", "u/2/a.heic.thumb.jpg", "u/2/a.heic.view.jpg", "u/2/b.mp4", "u/2/b.jpg"}
+    assert owner.get(f"/api/events/{ev['id']}").json()["photos"] == []
+
+
+def test_selected_download_includes_exact_originals_and_selected_similar_photos(setup):
+    owner, guest = setup(1), setup(2)
+    ev = owner.post("/api/events", json=EVENT).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    upload(owner, ev["id"], scene(85, 0))
+    blurry = scene(85, 0, blur=3)
+    blue = scene(86, 2)
+    similar = upload(guest, ev["id"], blurry)
+    other = upload(owner, ev["id"], blue)
+    response = guest.post(f"/api/events/{ev['id']}/download", json={"photo_ids": [other, similar, similar]})
+    assert response.status_code == 200 and response.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.testzip() is None
+        assert archive.namelist() == ["001-u2.jpg", "002-u1.jpg"]
+        assert [archive.read(name) for name in archive.namelist()] == [blurry, blue]
+
+
+@pytest.mark.parametrize("action", ["download", "photos/delete"])
+def test_photo_selection_rejects_missing_foreign_and_unauthorized_items(setup, action):
+    owner, guest, stranger = setup(1), setup(2), setup(3)
+    ev = owner.post("/api/events", json=EVENT).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    other = owner.post("/api/events", json=EVENT).json()
+    photo = upload(owner, ev["id"], scene(87, 0))
+    foreign = upload(owner, other["id"], scene(88, 1))
+    url = f"/api/events/{ev['id']}/{action}"
+    body = {"photo_ids": [photo]}
+    assert TestClient(main.app).post(url, json=body).status_code == 401
+    assert stranger.post(url, json=body).status_code == 404
+    assert owner.post(url, json={"photo_ids": [photo, foreign]}).status_code == 404
+    assert owner.post(url, json={"photo_ids": [photo, 999999]}).status_code == 404
+    assert owner.post(url, json={"photo_ids": []}).status_code == 422
+    assert owner.post(url, json={"photo_ids": [photo] * 5001}).status_code == 422
+    assert main.s3.deleted == []
+    assert len(owner.get(f"/api/events/{ev['id']}").json()["photos"]) == 1
 
 
 @pytest.mark.parametrize(

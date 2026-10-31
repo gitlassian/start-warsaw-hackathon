@@ -19,21 +19,23 @@ export function day(d: Date, now: Date) {
   return d.getFullYear() === now.getFullYear() ? date.format(d) : dateYear.format(d);
 }
 
-/** "Today · 19:00 – 23:00", "Sat, Oct 31 · 22:00 – 03:00", "Oct 30 – Nov 2", "Now · until 23:00". */
-export function formatWhen(start: Date, end: Date, now = new Date()) {
-  if (start <= now && now < end) {
+/** "Today 19:00 – 23:00", "Sat, Oct 31 22:00 – 03:00", "Today 19:00 – Tomorrow 23:00", "Now · until 23:00". */
+export function formatWhen(start: Date, end: Date, now = new Date(), fullRange = false) {
+  if (!fullRange && start <= now && now < end) {
     return `Now · until ${midnight(end) === midnight(now) ? time(end) : `${day(end, now)}, ${time(end)}`}`;
   }
   // Same day or overnight (a party till 3am) reads as one evening.
-  if (end.getTime() - start.getTime() < DAY) return `${day(start, now)} · ${time(start)} – ${time(end)}`;
-  return `${day(start, now)} – ${day(end, now)}`;
+  if (midnight(start) === midnight(end) || (!fullRange && end.getTime() - start.getTime() < DAY)) {
+    return `${day(start, now)} ${time(start)} – ${time(end)}`;
+  }
+  return `${day(start, now)} ${time(start)} – ${day(end, now)} ${time(end)}`;
 }
 
 /** Rendered in the viewer's time zone; the server's guess is replaced on hydration. */
-export function When({ start, end }: { start: string; end: string }) {
+export function When({ start, end, fullRange = false }: { start: string; end: string; fullRange?: boolean }) {
   return (
     <time dateTime={start} suppressHydrationWarning>
-      {formatWhen(new Date(start), new Date(end))}
+      {formatWhen(new Date(start), new Date(end), new Date(), fullRange)}
     </time>
   );
 }

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
-import { Skeleton } from "@/components/skeleton";
+import { EventsSkeleton } from "@/components/skeleton";
+import { ShimmerImage } from "@/components/shimmer-image";
 import Link from "next/link";
 import { ChevronRight, Images, JoinIcon, Plus } from "@/components/icons";
 import { Account } from "@/components/account";
@@ -24,7 +25,7 @@ async function Content() {
             <li key={e.id}>
               <Link href={`/e/${e.code}`} className="flex items-center gap-3 rounded-ui p-2 active:bg-surface">
                 {e.preview_url ? (
-                  <img src={e.preview_url} alt="" className="size-14 shrink-0 rounded-ui border border-line object-cover" />
+                  <ShimmerImage src={e.preview_url} alt="" className="size-14 shrink-0 rounded-ui border border-line" />
                 ) : (
                   <span className="flex size-14 shrink-0 items-center justify-center rounded-ui bg-surface text-faint">
                     <Images size={22} strokeWidth={1.5} />
@@ -61,7 +62,7 @@ async function Content() {
 // Data streams in behind a skeleton so navigation is instant.
 export default function Home() {
   return (
-    <Suspense fallback={<Skeleton />}>
+    <Suspense fallback={<EventsSkeleton />}>
       <Content />
     </Suspense>
   );

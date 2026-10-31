@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "RollCall",
     short_name: "RollCall",
-    description: "One shared photo roll for every event.",
+    description: "One shared photo roll for every event",
     start_url: "/",
     display: "standalone",
     background_color: "#0e1621",

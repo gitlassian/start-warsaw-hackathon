@@ -34,7 +34,7 @@
   background: #e5e5e5;
 }
 /* Depth shades the photo only; the paper stays white. */
-.print-image > img {
+.print-image img {
   display: block;
   width: 100%;
   height: 100%;
@@ -98,7 +98,7 @@
 @media (prefers-reduced-motion: reduce) {
   .print,
   .print[data-tuck],
-  .print-image > img {
+  .print-image img {
     transition: none;
     animation: none;
   }

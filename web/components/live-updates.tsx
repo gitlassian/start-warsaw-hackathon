@@ -36,6 +36,7 @@ export function LiveUpdates({ eventId, version }: { eventId: number; version: st
         busy = false;
       }
     }
+    void check(); // Revalidate a restored album immediately while keeping its cached photos visible.
     const timer = setInterval(check, EVERY_MS);
     document.addEventListener("visibilitychange", check); // catch up the moment the tab comes back
     return () => {

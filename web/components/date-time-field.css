@@ -1,0 +1,33 @@
+.date-time-wheels {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.75rem 0.75rem 1.75rem;
+  width: 100%;
+}
+
+.date-time-day {
+  min-width: 0;
+  padding-right: 0.75rem;
+  text-align: left;
+}
+
+.date-time-number {
+  text-align: center;
+}
+
+.date-time-number:last-child {
+  text-align: right;
+}
+
+.date-time-separator {
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: var(--fg);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.date-time-wheels .wheel-item[aria-selected="true"] {
+  font-weight: 500;
+}

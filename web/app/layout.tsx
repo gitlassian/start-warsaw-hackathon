@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "RollCall",
-  description: "One shared photo roll for every event.",
+  description: "One shared photo roll for every event",
   icons: { icon: "/icon.svg", apple: "/apple-icon.png" },
   appleWebApp: { capable: true, title: "RollCall", statusBarStyle: "default" },
 };

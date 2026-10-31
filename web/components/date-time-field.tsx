@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Calendar } from "@/components/icons";
-import { day, time } from "@/components/when";
+import { Calendar, X } from "@/components/icons";
+import { day } from "@/components/when";
+import "./date-time-field.css";
 
 const ROW = 40; // px; keep in sync with .wheel in globals.css
 const DAY = 864e5;
 const DAYS_BACK = 30; // hosts sometimes create the album after the party
 const DAYS_AHEAD = 365;
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
 
 const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const time = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
 /** The next whole hour: a sensible first guess for a start time. */
 export function nextHour() {
@@ -24,23 +27,27 @@ function Wheel({
   onChange,
   label,
   className = "",
+  loop = false,
 }: {
   items: string[];
   index: number;
   onChange: (i: number) => void;
   label: string;
   className?: string;
+  loop?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const settle = useRef(0);
 
   // Position once on open; after that the user's scrolling is the source of truth.
   useEffect(() => {
-    ref.current!.scrollTop = index * ROW;
+    ref.current!.scrollTop = (index + (loop ? items.length : 0)) * ROW;
+    return () => window.clearTimeout(settle.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const go = (i: number) => ref.current!.scrollTo({ top: i * ROW, behavior: "smooth" });
+  const options = loop ? [...items, ...items, ...items] : items;
 
   return (
     <div
@@ -53,18 +60,31 @@ function Wheel({
         // shortcut: debounce instead of `scrollend`, which older iOS Safari lacks.
         clearTimeout(settle.current);
         settle.current = window.setTimeout(() => {
-          const i = Math.max(0, Math.min(items.length - 1, Math.round(ref.current!.scrollTop / ROW)));
+          const row = Math.round(ref.current!.scrollTop / ROW);
+          const i = loop ? row % items.length : Math.max(0, Math.min(items.length - 1, row));
           if (i !== index) onChange(i);
+          // Keep looping wheels in the middle copy, with the same visible neighbours.
+          if (loop && (row < items.length || row >= items.length * 2)) {
+            ref.current!.scrollTop = (items.length + i) * ROW;
+          }
         }, 80);
       }}
       onKeyDown={(e) => {
         if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
         e.preventDefault();
-        go(Math.max(0, Math.min(items.length - 1, index + (e.key === "ArrowDown" ? 1 : -1))));
+        const row = loop ? Math.round(e.currentTarget.scrollTop / ROW) : index;
+        go(Math.max(0, Math.min(options.length - 1, row + (e.key === "ArrowDown" ? 1 : -1))));
       }}
     >
-      {items.map((text, i) => (
-        <div key={i} role="option" aria-selected={i === index} className="wheel-item" onClick={() => go(i)}>
+      {options.map((text, row) => (
+        <div
+          key={row}
+          role="option"
+          aria-hidden={loop && (row < items.length || row >= items.length * 2) ? true : undefined}
+          aria-selected={row === index + (loop ? items.length : 0)}
+          className="wheel-item"
+          onClick={() => go(row)}
+        >
           {text}
         </div>
       ))}
@@ -75,15 +95,12 @@ function Wheel({
 function Wheels({ value, onChange }: { value: Date; onChange: React.Dispatch<React.SetStateAction<Date | null>> }) {
   const [now] = useState(() => new Date());
   const [first] = useState(() => new Date(midnight(now).getTime() - DAYS_BACK * DAY));
-  const h12 = new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 ?? false;
 
   const days = Array.from({ length: DAYS_BACK + DAYS_AHEAD + 1 }, (_, i) => {
     const d = new Date(first);
     d.setDate(first.getDate() + i);
     return d;
   });
-  const hours = Array.from({ length: h12 ? 12 : 24 }, (_, i) => (h12 ? String(i || 12) : String(i).padStart(2, "0")));
-  const h = value.getHours();
 
   // Functional update: two wheels can settle in the same tick.
   const set = (fn: (d: Date) => void) =>
@@ -94,38 +111,32 @@ function Wheels({ value, onChange }: { value: Date; onChange: React.Dispatch<Rea
     });
 
   return (
-    <div className="relative flex">
+    <div className="date-time-wheels">
       <div className="pointer-events-none absolute inset-x-0 top-1/2 h-10 -translate-y-1/2 rounded-ui bg-surface" aria-hidden />
       <Wheel
         label="Day"
-        className="flex-[2.2] pr-4 text-right"
+        className="date-time-day"
         items={days.map((d) => day(d, now))}
         index={Math.max(0, Math.min(days.length - 1, Math.round((midnight(value).getTime() - first.getTime()) / DAY)))}
         onChange={(i) => set((d) => d.setFullYear(days[i].getFullYear(), days[i].getMonth(), days[i].getDate()))}
       />
       <Wheel
         label="Hour"
-        className="flex-1 text-center"
-        items={hours}
-        index={h12 ? h % 12 : h}
-        onChange={(i) => set((d) => d.setHours(h12 ? i + (d.getHours() >= 12 ? 12 : 0) : i))}
+        className="date-time-number"
+        loop
+        items={HOURS}
+        index={value.getHours()}
+        onChange={(i) => set((d) => d.setHours(i))}
       />
+      <span className="date-time-separator" aria-hidden>:</span>
       <Wheel
         label="Minute"
-        className="flex-1 text-center"
+        className="date-time-number"
+        loop
         items={MINUTES}
         index={Math.floor(value.getMinutes() / 5)}
         onChange={(i) => set((d) => d.setMinutes(i * 5))}
       />
-      {h12 ? (
-        <Wheel
-          label="AM or PM"
-          className="flex-1 pl-2 text-left"
-          items={["AM", "PM"]}
-          index={h >= 12 ? 1 : 0}
-          onChange={(i) => set((d) => d.setHours((d.getHours() % 12) + i * 12))}
-        />
-      ) : null}
     </div>
   );
 }
@@ -179,21 +190,29 @@ export function DateTimeField({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold">{label}</h2>
-            <p className="text-muted">Scroll to choose the date and time, then tap Done.</p>
+            <p className="text-muted">Scroll to choose the date and time</p>
           </div>
           <button
             type="button"
-            className="btn btn-secondary h-11 shrink-0 px-4"
-            onClick={() => {
-              if (draft) onChange(draft);
-              dialog.current?.close();
-            }}
+            className="btn-icon shrink-0"
+            aria-label="Close"
+            onClick={() => dialog.current?.close()}
           >
-            Done
+            <X size={22} strokeWidth={1.75} />
           </button>
         </div>
         {/* Remounted on every open so the wheels start at the current value. */}
         <div className="mt-3">{draft ? <Wheels value={draft} onChange={setDraft} /> : <div className="h-50" />}</div>
+        <button
+          type="button"
+          className="btn btn-primary mt-4 w-full"
+          onClick={() => {
+            if (draft) onChange(draft);
+            dialog.current?.close();
+          }}
+        >
+          Done
+        </button>
       </dialog>
     </>
   );

@@ -8,7 +8,9 @@ import time
 import uuid
 import zipfile
 from contextlib import asynccontextmanager
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
 import boto3
 import jwt
@@ -17,12 +19,13 @@ from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageOps
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field, StringConstraints
 import requests
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, LargeBinary, String, Text, create_engine, delete, func, select
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, LargeBinary, String, Text, create_engine, delete, func, select, update
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 import photo_ai
+from migrate import migrate_database
 
 log = logging.getLogger("rollcall")
 
@@ -40,6 +43,8 @@ URL_REUSE = 3600  # hand out the same signed URL for an hour, so a refresh doesn
 MAX_PHOTO_BYTES = 50 * 1024 * 1024
 MAX_VIDEO_BYTES = 200 * 1024 * 1024
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I: codes get typed by hand
+SESSION_DAYS = 30
+MAX_GUEST_PHOTOS = 500
 MEDIA_TYPES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -76,10 +81,14 @@ class Base(DeclarativeBase):
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
-    google_sub: Mapped[str] = mapped_column(String(64), unique=True)
-    email: Mapped[str] = mapped_column(String(320))
+    google_sub: Mapped[str | None] = mapped_column(String(64), unique=True)
+    email: Mapped[str | None] = mapped_column(String(320))
     name: Mapped[str] = mapped_column(String(200))
     picture: Mapped[str | None] = mapped_column(String(1000))
+
+    @property
+    def is_guest(self) -> bool:
+        return self.google_sub is None
 
 
 class Event(Base):
@@ -87,6 +96,9 @@ class Event(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     code: Mapped[str] = mapped_column(String(8), unique=True)
+    invite_token: Mapped[str] = mapped_column(String(64), unique=True, default=lambda: secrets.token_urlsafe(24))
+    invites_open: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    uploads_open: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     title: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(Text, default="")
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -129,8 +141,7 @@ SessionLocal = sessionmaker(engine)
 
 @asynccontextmanager
 async def lifespan(_app):
-    # shortcut: create_all instead of migrations; add Alembic before the first schema change.
-    Base.metadata.create_all(engine)
+    migrate_database(engine)
     try:
         s3.head_bucket(Bucket=S3_BUCKET)
     except ClientError:
@@ -149,15 +160,31 @@ def db():
         yield s
 
 
-def current_user(request: Request, s: Session = Depends(db)) -> User:
+def optional_user(request: Request, s: Session = Depends(db)) -> User | None:
     try:
         uid = int(jwt.decode(request.cookies.get("session", ""), JWT_SECRET, algorithms=["HS256"])["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
-        raise HTTPException(401, "Not signed in")
-    user = s.get(User, uid)
+        return None
+    return s.get(User, uid)
+
+
+def current_user(user: User | None = Depends(optional_user)) -> User:
     if not user:
         raise HTTPException(401, "Not signed in")
     return user
+
+
+def google_user(user: User = Depends(current_user)) -> User:
+    if user.is_guest:
+        raise HTTPException(403, "Sign in with Google to create an event")
+    return user
+
+
+def set_session(response: Response, user: User):
+    token = jwt.encode({"sub": str(user.id), "exp": now() + timedelta(days=SESSION_DAYS)}, JWT_SECRET, "HS256")
+    response.set_cookie(
+        "session", token, max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax", secure=COOKIE_SECURE,
+    )
 
 
 def public(url: str) -> str:
@@ -203,7 +230,7 @@ def check_upload(key: str, user: User) -> int:
 
 
 def user_out(u: User):
-    return {"id": u.id, "name": u.name, "email": u.email, "picture": u.picture}
+    return {"id": u.id, "name": u.name, "email": u.email, "picture": u.picture, "is_guest": u.is_guest}
 
 
 def event_out(e: Event, user: User, latest_thumb: str | None = None):
@@ -218,6 +245,10 @@ def event_out(e: Event, user: User, latest_thumb: str | None = None):
         "cover_url": get_url(e.cover_key) if e.cover_key else None,
         "preview_url": get_url(preview) if preview else None,  # the cover, else the newest photo
         "is_owner": e.owner_id == user.id,
+        "viewer_is_guest": user.is_guest,
+        "invite_token": e.invite_token,
+        "invites_open": e.invites_open,
+        "uploads_open": e.uploads_open,
     }
 
 
@@ -230,6 +261,8 @@ def photo_out(p: Photo, author: User, user: User, event: Event):
         "thumb_url": None if p.thumb_key == p.key and is_video(p.key) else get_url(p.thumb_key),
         "download_url": get_url(p.key, download=True),
         "author": author.name,
+        "author_id": author.id,
+        "created_at": (p.created_at.replace(tzinfo=timezone.utc) if p.created_at.tzinfo is None else p.created_at).isoformat(),
         "can_delete": p.user_id == user.id or event.owner_id == user.id,
     }
 
@@ -238,6 +271,15 @@ def member_event(event_id: int, user: User, s: Session) -> Event:
     e = s.get(Event, event_id)
     if not e or not s.get(Member, (event_id, user.id)):
         raise HTTPException(404, "Event not found")
+    return e
+
+
+def writable_event(event_id: int, user: User, s: Session) -> Event:
+    e = member_event(event_id, user, s)
+    if not e.uploads_open:
+        raise HTTPException(403, "The host has paused photo uploads")
+    if user.is_guest and s.scalar(select(func.count()).where(Photo.event_id == event_id, Photo.user_id == user.id)) >= MAX_GUEST_PHOTOS:
+        raise HTTPException(429, "You've reached the photo limit for this album")
     return e
 
 
@@ -278,18 +320,26 @@ def google_profile(access_token: str) -> dict:
 
 
 @api.post("/auth/google")
-def google_login(body: GoogleIn, response: Response, s: Session = Depends(db)):
+def google_login(body: GoogleIn, response: Response, previous: User | None = Depends(optional_user), s: Session = Depends(db)):
     info = google_profile(body.access_token)
-    user = s.scalar(select(User).where(User.google_sub == info["sub"])) or User(google_sub=info["sub"])
+    user = s.scalar(select(User).where(User.google_sub == info["sub"]))
+    # Signing in after attending as a guest keeps memberships, photo ownership and deletion rights.
+    if user is None:
+        user = previous if previous and previous.is_guest else User()
+        user.google_sub = info["sub"]
+    elif previous and previous.is_guest and previous.id != user.id:
+        for membership in s.scalars(select(Member).where(Member.user_id == previous.id)).all():
+            if not s.get(Member, (membership.event_id, user.id)):
+                s.add(Member(event_id=membership.event_id, user_id=user.id))
+        s.execute(update(Photo).where(Photo.user_id == previous.id).values(user_id=user.id))
+        s.execute(delete(Member).where(Member.user_id == previous.id))
+        s.delete(previous)
     user.email = info["email"]
     user.name = info.get("name") or info["email"]
     user.picture = info.get("picture")
     s.add(user)
     s.commit()
-    token = jwt.encode({"sub": str(user.id), "exp": now() + timedelta(days=30)}, JWT_SECRET, "HS256")
-    response.set_cookie(
-        "session", token, max_age=30 * 86400, httponly=True, samesite="lax", secure=COOKIE_SECURE
-    )
+    set_session(response, user)
     return user_out(user)
 
 
@@ -306,15 +356,41 @@ def me(user: User = Depends(current_user)):
 
 class UploadIn(BaseModel):
     types: list[str] = Field(min_length=1, max_length=2)
+    event_id: int | None = Field(default=None, gt=0)
+    sizes: list[int] | None = Field(default=None, min_length=1, max_length=2)
 
 
 @api.post("/uploads")
-def create_uploads(body: UploadIn, user: User = Depends(current_user)):
+def create_uploads(body: UploadIn, user: User = Depends(current_user), s: Session = Depends(db)):
+    if body.event_id is not None:
+        writable_event(body.event_id, user, s)
+    elif user.is_guest:
+        raise HTTPException(403, "Choose an album before uploading")
+    if body.sizes is not None:
+        if len(body.sizes) != len(body.types):
+            raise HTTPException(422, "Each file needs its size")
+        for media_type, size in zip(body.types, body.sizes):
+            limit = MAX_VIDEO_BYTES if media_type.startswith("video/") else MAX_PHOTO_BYTES
+            if size <= 0 or size > limit:
+                raise HTTPException(413, f"Files must be between 1 byte and {limit // 2**20} MB")
+    if user.is_guest:
+        if body.sizes is None:
+            raise HTTPException(422, "Each file needs its size")
+        rate_limit(f"uploads:{user.id}", 120, 60)
+    prefix = f"u/{user.id}/" + (f"e/{body.event_id}/" if body.event_id is not None else "")
     out = []
     for t in body.types:
         if t not in MEDIA_TYPES:
             raise HTTPException(400, "Only photos and videos can be uploaded")
-        key = f"u/{user.id}/{uuid.uuid4().hex}{MEDIA_TYPES[t]}"
+        key = f"{prefix}{uuid.uuid4().hex}{MEDIA_TYPES[t]}"
+        if user.is_guest:
+            limit = MAX_VIDEO_BYTES if t.startswith("video/") else MAX_PHOTO_BYTES
+            signed = s3.generate_presigned_post(
+                S3_BUCKET, key, Fields={"Content-Type": t},
+                Conditions=[{"Content-Type": t}, ["content-length-range", 1, limit]], ExpiresIn=900,
+            )
+            out.append({"key": key, "url": public(signed["url"]), "fields": signed["fields"]})
+            continue
         url = s3.generate_presigned_url(
             "put_object", Params={"Bucket": S3_BUCKET, "Key": key, "ContentType": t}, ExpiresIn=900
         )
@@ -323,8 +399,8 @@ def create_uploads(body: UploadIn, user: User = Depends(current_user)):
 
 
 class EventIn(BaseModel):
-    title: str = Field(min_length=1, max_length=120)
-    description: str = Field("", max_length=2000)
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+    description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] = ""
     starts_at: AwareDatetime
     ends_at: AwareDatetime
     cover_key: str | None = None
@@ -343,7 +419,7 @@ def list_events(user: User = Depends(current_user), s: Session = Depends(db)):
 
 
 @api.post("/events")
-def create_event(body: EventIn, user: User = Depends(current_user), s: Session = Depends(db)):
+def create_event(body: EventIn, user: User = Depends(google_user), s: Session = Depends(db)):
     if body.ends_at < body.starts_at:
         raise HTTPException(422, "The event can't end before it starts")
     if body.cover_key:
@@ -382,9 +458,28 @@ def get_event(event_id: int, user: User = Depends(current_user), s: Session = De
 
 def owned_event(event_id: int, user: User, s: Session) -> Event:
     e = member_event(event_id, user, s)
-    if e.owner_id != user.id:
+    if user.is_guest or e.owner_id != user.id:
         raise HTTPException(403, "Only the host can change this event")
     return e
+
+
+class EventAccessIn(BaseModel):
+    invites_open: bool | None = None
+    uploads_open: bool | None = None
+    rotate_invite: bool = False
+
+
+@api.patch("/events/{event_id}/access")
+def update_access(event_id: int, body: EventAccessIn, user: User = Depends(google_user), s: Session = Depends(db)):
+    e = owned_event(event_id, user, s)
+    if body.invites_open is not None:
+        e.invites_open = body.invites_open
+    if body.uploads_open is not None:
+        e.uploads_open = body.uploads_open
+    if body.rotate_invite:
+        e.invite_token = secrets.token_urlsafe(24)
+    s.commit()
+    return event_out(e, user)
 
 
 class EventEdit(EventIn):
@@ -457,7 +552,9 @@ def make_previews(key: str) -> str:
 def add_photo(
     event_id: int, body: PhotoIn, background: BackgroundTasks, user: User = Depends(current_user), s: Session = Depends(db)
 ):
-    e = member_event(event_id, user, s)
+    e = writable_event(event_id, user, s)
+    if user.is_guest and (not body.key.startswith(f"u/{user.id}/e/{event_id}/") or not body.thumb_key.startswith(f"u/{user.id}/e/{event_id}/")):
+        raise HTTPException(400, "This upload belongs to another album")
     # shortcut: presigned PUT can't cap size, so oversized originals are rejected here after upload.
     limit = MAX_VIDEO_BYTES if is_video(body.key) else MAX_PHOTO_BYTES
     if check_upload(body.key, user) > limit:
@@ -494,6 +591,39 @@ def delete_photo(photo_id: int, user: User = Depends(current_user), s: Session =
     s.delete(p)
     s.commit()
     return {"ok": True}
+
+
+class PhotoSelection(BaseModel):
+    photo_ids: list[int] = Field(min_length=1, max_length=5000)
+
+
+def selected_photos(event_id: int, photo_ids: list[int], s: Session):
+    ids = set(photo_ids)
+    rows = s.execute(
+        select(Photo, User.name).join(User, User.id == Photo.user_id)
+        .where(Photo.event_id == event_id, Photo.id.in_(ids)).order_by(Photo.created_at, Photo.id)
+    ).all()
+    if len(rows) != len(ids):
+        raise HTTPException(404, "Some selected photos are no longer available")
+    return rows
+
+
+@api.post("/events/{event_id}/photos/delete")
+def delete_selected_photos(
+    event_id: int, body: PhotoSelection, user: User = Depends(current_user), s: Session = Depends(db)
+):
+    event = member_event(event_id, user, s)
+    rows = selected_photos(event_id, body.photo_ids, s)
+    # Validate the whole selection before removing any objects or database rows.
+    if event.owner_id != user.id and any(p.user_id != user.id for p, _ in rows):
+        raise HTTPException(403, "You can only delete your own photos")
+    for key in {k for p, _ in rows for k in (p.key, p.thumb_key, view_key(p.key))}:
+        s3.delete_object(Bucket=S3_BUCKET, Key=key)
+    ids = [p.id for p, _ in rows]
+    s.execute(delete(PhotoFeature).where(PhotoFeature.photo_id.in_(ids)))
+    s.execute(delete(Photo).where(Photo.id.in_(ids)))
+    s.commit()
+    return {"deleted": ids}
 
 
 _analysis_lock = threading.Lock()
@@ -602,9 +732,22 @@ def download_album(
         select(Photo, User.name).join(User, User.id == Photo.user_id)
         .where(Photo.event_id == event_id).order_by(Photo.created_at, Photo.id)
     ).all()
+    return album_archive(event, [r for r in rows if r[0].id not in skip])
+
+
+@api.post("/events/{event_id}/download")
+def download_selected_photos(
+    event_id: int, body: PhotoSelection, user: User = Depends(current_user), s: Session = Depends(db)
+):
+    event = member_event(event_id, user, s)
+    # Explicit selections include similar photos the member chose to keep.
+    return album_archive(event, selected_photos(event_id, body.photo_ids, s))
+
+
+def album_archive(event: Event, rows):
     files = [
         (p.key, f"{n:03d}-{_slug(author, 'guest')}{os.path.splitext(p.key)[1]}", p.created_at)
-        for n, (p, author) in enumerate((r for r in rows if r[0].id not in skip), 1)
+        for n, (p, author) in enumerate(rows, 1)
     ]
 
     def stream():
@@ -647,7 +790,11 @@ def search_photos(
 @api.get("/codes/{code}")
 def preview_code(code: str, user: User = Depends(current_user), s: Session = Depends(db)):
     e = event_by_code(code, s)
-    return {**event_out(e, user), "joined": s.get(Member, (e.id, user.id)) is not None}
+    joined = s.get(Member, (e.id, user.id)) is not None
+    out = event_out(e, user)
+    if not joined:
+        out["invite_token"] = None
+    return {**out, "joined": joined}
 
 
 @api.get("/codes/{code}/teaser")
@@ -664,13 +811,57 @@ def code_teaser(code: str, s: Session = Depends(db)):
     }
 
 
-@api.post("/codes/{code}/join")
-def join(code: str, user: User = Depends(current_user), s: Session = Depends(db)):
-    e = event_by_code(code, s)
+_rates: dict[str, deque] = defaultdict(deque)
+_rate_lock = threading.Lock()
+
+
+def rate_limit(key: str, maximum: int, seconds: int):
+    stamp = time.monotonic()
+    with _rate_lock:
+        # Prune expired entries when the limiter grows.
+        if len(_rates) > 10000:
+            for old_key in list(_rates):
+                if not _rates[old_key] or _rates[old_key][-1] <= stamp - 300:
+                    del _rates[old_key]
+        attempts = _rates[key]
+        while attempts and attempts[0] <= stamp - seconds:
+            attempts.popleft()
+        if len(attempts) >= maximum:
+            raise HTTPException(429, "Too many attempts. Please try again in a minute", headers={"Retry-After": str(seconds)})
+        attempts.append(stamp)
+
+
+def join_event(e: Event, request: Request, response: Response, user: User | None, s: Session):
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        raise HTTPException(403, "Open this invitation in RollCall")
+    if not e.invites_open and (user is None or not s.get(Member, (e.id, user.id))):
+        raise HTTPException(403, "The host has closed this invitation")
+    if user is None:
+        rate_limit(f"guests:{request.client.host if request.client else 'unknown'}", 300, 60)
+        user = User(name="Guest")
+        s.add(user)
+        s.flush()
+        # Serialize first visits to the same invitation in the browser; subsequent visits reuse this cookie.
+        set_session(response, user)
     if not s.get(Member, (e.id, user.id)):
         s.add(Member(event_id=e.id, user_id=user.id))
-        s.commit()
-    return {"id": e.id}
+    s.commit()
+    return {"id": e.id, "code": e.code}
+
+
+@api.post("/codes/{code}/join")
+def join(code: str, request: Request, response: Response, user: User | None = Depends(optional_user), s: Session = Depends(db)):
+    rate_limit(f"codes:{request.client.host if request.client else 'unknown'}", 60, 60)
+    e = event_by_code(code, s)
+    return join_event(e, request, response, user, s)
+
+
+@api.post("/invites/{token}/join")
+def join_invite(token: str, request: Request, response: Response, user: User | None = Depends(optional_user), s: Session = Depends(db)):
+    e = s.scalar(select(Event).where(Event.invite_token == token))
+    if not e:
+        raise HTTPException(404, "This invitation is invalid or has expired")
+    return join_event(e, request, response, user, s)
 
 
 app.include_router(api)

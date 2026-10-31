@@ -17,7 +17,7 @@ export function DeleteDialog(props: {
       destructive
       icon={<Trash2 size={24} strokeWidth={1.75} />}
       pendingLabel="Deleting…"
-      note="This can’t be undone."
+      note="This can’t be undone"
     />
   );
 }

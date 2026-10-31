@@ -39,7 +39,7 @@ const G = (
 /** Our own pill instead of Google's iframe button; Google's popup issues an access token the API verifies. */
 export function GoogleButton() {
   const client = useRef<TokenClient | null>(null);
-  const [state, setState] = useState<"loading" | "ready" | "busy">("loading");
+  const [state, setState] = useState<"loading" | "ready" | "busy" | "error">("loading");
   const [error, setError] = useState("");
 
   async function onToken({ access_token }: { access_token?: string }) {
@@ -67,11 +67,11 @@ export function GoogleButton() {
   }
 
   if (!CLIENT_ID) {
-    return <p className="text-center text-sm text-muted">Set NEXT_PUBLIC_GOOGLE_CLIENT_ID to enable sign-in.</p>;
+    return <p className="text-center text-sm text-muted">Set NEXT_PUBLIC_GOOGLE_CLIENT_ID to enable sign-in</p>;
   }
   return (
     <>
-      <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" onReady={init} />
+      <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" onReady={init} onError={() => { setState("error"); setError("Couldn’t load Google sign-in. Reload the page to try again"); }} />
       <button
         type="button"
         disabled={state !== "ready"}
@@ -80,10 +80,11 @@ export function GoogleButton() {
           setState("busy");
           client.current?.requestAccessToken(); // must run inside the tap so the popup isn't blocked
         }}
-        className="btn btn-primary w-full"
+        aria-busy={state === "loading" || state === "busy"}
+        className={`btn btn-primary w-full${state === "loading" || state === "busy" ? " shimmer-action" : ""}`}
       >
         {G}
-        {state === "busy" ? "Signing in…" : "Continue with Google"}
+        {state === "busy" ? "Signing in…" : state === "loading" ? "Loading sign-in…" : state === "error" ? "Sign-in unavailable" : "Continue with Google"}
       </button>
       {error ? (
         <p role="alert" className="mt-3 text-center text-sm">

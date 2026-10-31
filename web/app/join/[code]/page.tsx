@@ -1,43 +1,12 @@
 import { Suspense } from "react";
-import { Skeleton } from "@/components/skeleton";
-import { redirect } from "next/navigation";
-import { BottomBar, TopBar } from "@/components/bars";
-import { JoinButton } from "@/components/join";
-import { When } from "@/components/when";
-import { apiGet } from "@/lib/server";
-import type { EventItem } from "@/lib/types";
+import { GuestJoin } from "@/components/guest-join";
+import { AlbumSkeleton } from "@/components/skeleton";
 
 async function Content({ params }: PageProps<"/join/[code]">) {
   const { code } = await params;
-  const event = await apiGet<EventItem & { joined: boolean }>(`/api/codes/${code}`, `/join/${code}`);
-  if (event.joined) redirect(`/e/${event.code}`);
-
-  return (
-    <>
-      <TopBar back="/" title="Join event" />
-      <div className="flex flex-1 flex-col justify-center px-4 text-center">
-        {event.cover_url ? (
-          <img src={event.cover_url} alt="" className="aspect-[3/2] w-full rounded-ui border border-line object-cover" />
-        ) : null}
-        <p className="mt-5 text-sm font-medium text-accent">You’re invited</p>
-        <h1 className="mt-1 text-[26px] leading-tight font-semibold tracking-tight text-balance">{event.title}</h1>
-        <p className="mt-1 text-muted">
-          <When start={event.starts_at} end={event.ends_at} />
-        </p>
-        <p className="mt-4 text-muted">Join to see everyone’s photos and add your own.</p>
-      </div>
-      <BottomBar>
-        <JoinButton code={code} />
-      </BottomBar>
-    </>
-  );
+  return <GuestJoin invitation={code} />;
 }
 
-// Data streams in behind a skeleton so navigation is instant.
-export default function JoinPreview(props: PageProps<"/join/[code]">) {
-  return (
-    <Suspense fallback={<Skeleton />}>
-      <Content {...props} />
-    </Suspense>
-  );
+export default function Join(props: PageProps<"/join/[code]">) {
+  return <Suspense fallback={<AlbumSkeleton label="Opening album" />}><Content {...props} /></Suspense>;
 }

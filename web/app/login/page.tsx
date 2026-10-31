@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { GoogleButton } from "@/components/google-button";
+import { LoginSkeleton } from "@/components/skeleton";
 import { Pile } from "@/components/pile";
 import { When } from "@/components/when";
 import { apiPublic } from "@/lib/server";
@@ -35,15 +36,15 @@ async function Content({ searchParams }: PageProps<"/login">) {
           {event ? (
             n ? (
               <>
-                <span className="tabular-nums">{n.toLocaleString("en")}</span> {n === 1 ? "photo" : "photos"} already here.
+                <span className="tabular-nums">{n.toLocaleString("en")}</span> {n === 1 ? "photo" : "photos"} already here
                 <br />
-                Add yours.
+                Add yours
               </>
             ) : (
               <>
-                No photos yet.
+                No photos yet
                 <br />
-                Be the first to add one.
+                Be the first to add one
               </>
             )
           ) : (
@@ -62,7 +63,7 @@ async function Content({ searchParams }: PageProps<"/login">) {
               {event.people === 1 ? "person" : "people"} in
             </>
           ) : (
-            "Create an event and show guests the QR code. Everyone adds their photos, and everyone can see and save them all."
+            "Create an event and show guests the QR code. Everyone adds their photos, and everyone can see and save them all"
           )}
         </p>
       </div>
@@ -86,7 +87,7 @@ export default function Login(props: PageProps<"/login">) {
         ))}
       </div>
       <Wordmark />
-      <Suspense fallback={<div className="flex-1" />}>
+      <Suspense fallback={<LoginSkeleton />}>
         <Content {...props} />
       </Suspense>
     </div>

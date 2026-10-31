@@ -1,12 +1,17 @@
 "use client";
 
-import { Download, Film, Play, Search, Trash2, X } from "@/components/icons";
+import { Check, Download, Images, Search, Trash2, X } from "@/components/icons";
+import { AlbumTile } from "@/components/album-tile";
+import { PhotoGridSkeleton, Shimmer } from "@/components/skeleton";
+import { ShimmerImage } from "@/components/shimmer-image";
+import { BottomBar } from "@/components/bars";
 import { EmptyAlbum } from "@/components/empty-album";
 import { DeleteDialog } from "@/components/delete-dialog";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { api } from "@/lib/client";
 import type { Photo, SearchResult } from "@/lib/types";
+import "./album.css";
 
 async function save(photo: Photo) {
   // On phones the share sheet's "Save Image" puts it in the camera roll; a download would land in Files.
@@ -22,24 +27,51 @@ async function save(photo: Photo) {
   location.href = photo.download_url;
 }
 
-export function Album({ eventId, photos: all, hidden }: { eventId: number; photos: Photo[]; hidden: number[] }) {
+const subscribeTimeZone = () => () => {};
+const viewerTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+const serverTimeZone = () => "UTC";
+
+export function Album({ eventId, photos: provided, hidden, upload }: {
+  eventId: number; photos: Photo[]; hidden: number[]; upload: ReactNode;
+}) {
   const router = useRouter();
+  const searchId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const strip = useRef<HTMLDivElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const searchRequest = useRef(0);
   const [index, setIndex] = useState(0);
-  const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<number[] | null>(null); // photo ids, best match first
   const [showAll, setShowAll] = useState(false); // near-duplicates are tucked away unless asked for
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Photo | null>(null);
+  const [author, setAuthor] = useState<{ id: number; name: string } | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const [removed, setRemoved] = useState<Set<number>>(() => new Set());
+  const [deletingMany, setDeletingMany] = useState<Photo[] | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState("");
+  const timeZone = useSyncExternalStore(subscribeTimeZone, viewerTimeZone, serverTimeZone);
+  const addedAt = useMemo(() => new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium", timeStyle: "short", timeZone,
+  }), [timeZone]);
+  const all = provided.filter((p) => !removed.has(p.id));
+  const authors = new Map(all.map((p) => [p.author_id, p.author]));
+  if (author && !authors.has(author.id)) authors.set(author.id, author.name);
 
   // Search results replace the grid (best match first); similar photos stay hidden in either view.
   const hiddenIds = new Set(hidden);
   const byId = new Map(all.map((p) => [p.id, p]));
   const base = hits ? hits.flatMap((id) => byId.get(id) ?? []) : all;
-  const photos = showAll ? base : base.filter((p) => !hiddenIds.has(p.id));
+  const photos = base.filter((p) => (showAll || !hiddenIds.has(p.id))
+    && (!author || p.author_id === author.id));
   const current = photos[index];
+  const selectedPhotos = photos.filter((p) => selected.has(p.id));
+  const allSelected = photos.length > 0 && selectedPhotos.length === photos.length;
+  const canDeleteSelection = selectedPhotos.length > 0 && selectedPhotos.every((p) => p.can_delete);
+  const filtered = !!(author || hits);
 
   // Photos that arrive while the album is open fade in; the ones already there at load stay still.
   const [seen] = useState(() => new Set(all.map((p) => p.id)));
@@ -52,35 +84,54 @@ export function Album({ eventId, photos: all, hidden }: { eventId: number; photo
   const pauseVideos = () => strip.current?.querySelectorAll("video").forEach((v) => v.pause());
   useEffect(pauseVideos, [index]);
 
+  useEffect(() => {
+    if (!selecting) return;
+    function escape(e: KeyboardEvent) {
+      if (e.key === "Escape" && !document.querySelector("dialog[open]")) {
+        setSelecting(false);
+        setSelected(new Set());
+      }
+    }
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [selecting]);
+
   async function runSearch(q: string, includeSimilar: boolean) {
-    if (!q) return setHits(null);
-    const { results } = await api<SearchResult>(
-      `/api/events/${eventId}/search?q=${encodeURIComponent(q)}${includeSimilar ? "&all=true" : ""}`,
-    );
-    setHits(results.map((r) => r.id));
+    const request = ++searchRequest.current;
+    setSelected(new Set());
+    setError("");
+    if (!q) { setHits(null); setBusy(false); return; }
+    setBusy(true);
+    try {
+      const { results } = await api<SearchResult>(
+        `/api/events/${eventId}/search?q=${encodeURIComponent(q)}${includeSimilar ? "&all=true" : ""}`,
+      );
+      if (request === searchRequest.current) setHits(results.map((r) => r.id));
+    } catch (err) {
+      if (request === searchRequest.current) setError((err as Error).message);
+    } finally {
+      if (request === searchRequest.current) setBusy(false);
+    }
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    try {
-      await runSearch(query.trim(), showAll);
-    } catch (err) {
-      alert((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    await runSearch(query.trim(), showAll);
   }
 
   async function toggleSimilar() {
     setShowAll(!showAll);
-    if (hits) await runSearch(query.trim(), !showAll).catch(() => {});
+    setSelected(new Set());
+    if (hits || busy) await runSearch(query.trim(), !showAll);
   }
 
-  function closeSearch() {
-    setSearching(false);
+  function clearSearch() {
     setQuery("");
     setHits(null);
+    ++searchRequest.current;
+    setBusy(false);
+    setSelected(new Set());
+    searchInput.current?.focus();
   }
 
   function open(i: number) {
@@ -92,85 +143,214 @@ export function Album({ eventId, photos: all, hidden }: { eventId: number; photo
   async function remove(photo: Photo) {
     await api(`/api/photos/${photo.id}`, { method: "DELETE" });
     dialog.current?.close();
+    setDeleting(null);
+    setRemoved((previous) => new Set([...previous, photo.id]));
     router.refresh();
   }
 
-  if (!all.length) {
-    return <EmptyAlbum />;
+  function finishSelection() {
+    setSelecting(false);
+    setSelected(new Set());
   }
 
-  return (
-    <>
-      <div className="flex items-center gap-2 px-4 pb-3">
-        {searching ? (
-          <form onSubmit={submit} role="search" className="relative flex-1">
-            <Search size={20} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint" />
-            <input
-              autoFocus
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search photos: dog, laptop, sunset…"
-              aria-label="Search photos"
-              className="field pr-11 pl-11"
-              enterKeyHint="search"
-            />
-            <button type="button" onClick={closeSearch} className="btn-icon absolute top-1/2 right-0.5 -translate-y-1/2 border-0" aria-label="Close search">
-              <X size={20} strokeWidth={1.75} />
+  function toggleSelected(id: number) {
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function saveMany(items: Photo[]) {
+    if (!items.length || downloading) return;
+    setDownloading(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/events/${eventId}/download`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ photo_ids: items.map((p) => p.id) }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(typeof data.detail === "string" ? data.detail : "Could not prepare the download. Try again");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "rollcall-photos.zip";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  async function removeMany(items: Photo[]) {
+    const result = await api<{ deleted: number[] }>(`/api/events/${eventId}/photos/delete`, {
+      body: { photo_ids: items.map((p) => p.id) },
+    });
+    setRemoved((previous) => new Set([...previous, ...result.deleted]));
+    setDeletingMany(null);
+    finishSelection();
+    router.refresh();
+  }
+
+  const saveAll = all.length ? (
+    filtered ? (
+      <button type="button" onClick={() => saveMany(photos)} disabled={!photos.length || downloading || busy} className={`btn btn-secondary album-save${downloading ? " shimmer-action" : ""}`} aria-label="Save all matching photos" aria-busy={downloading}>
+        <Download size={18} strokeWidth={1.75} /> {downloading ? "Saving…" : "Save all"}
+      </button>
+    ) : (
+      <a href={`/api/events/${eventId}/download${showAll ? "?all=true" : ""}`} download className="btn btn-secondary album-save">
+        <Download size={18} strokeWidth={1.75} /> Save all
+      </a>
+    )
+  ) : null;
+
+  const heading = (
+    <div className="album-heading">
+      <div className="flex min-w-0 items-baseline gap-2">
+        <h2 className="font-semibold whitespace-nowrap" aria-live="polite">{selecting ? `${selectedPhotos.length} selected` : "Photos"}</h2>
+        {!selecting ? busy ? <Shimmer className="h-4 w-6" /> : <span className="text-sm text-muted tabular-nums" aria-live="polite">{photos.length}</span> : null}
+      </div>
+      <div className="album-summary">
+        {selecting ? (
+          <>
+            <button type="button" className="btn btn-secondary album-selection-all" disabled={!photos.length || busy} aria-pressed={allSelected} onClick={() => {
+              setSelected(allSelected ? new Set() : new Set(photos.map((p) => p.id)));
+            }}>
+              <Check size={18} strokeWidth={1.75} />
+              {allSelected ? "Deselect all" : "Select all"}
             </button>
-          </form>
+            <button type="button" className="btn btn-secondary album-selection-cancel" onClick={finishSelection} aria-label="Cancel" title="Cancel selection">
+              <X size={18} strokeWidth={1.75} />
+              <span className="album-cancel-label">Cancel</span>
+            </button>
+          </>
         ) : (
           <>
-            <div className="min-w-0 flex-1 text-sm text-muted" aria-live="polite">
-              {hidden.length ? (
-                <button type="button" onClick={toggleSimilar} className="py-2 text-left tabular-nums underline-offset-4 hover:underline">
-                  {showAll ? "Hide similar photos" : `${hidden.length} similar hidden · Show`}
-                </button>
-              ) : null}
-            </div>
-            <button type="button" onClick={() => setSearching(true)} className="btn-icon shrink-0" aria-label="Search photos">
-              <Search size={20} strokeWidth={1.75} />
-            </button>
-            <a
-              href={`/api/events/${eventId}/download${showAll ? "?all=true" : ""}`}
-              download
-              className="btn btn-secondary h-11 shrink-0 px-4 text-sm"
-            >
-              <Download size={18} strokeWidth={1.75} /> Save all
-            </a>
+            {hidden.length ? (
+              <button
+                type="button"
+                onClick={toggleSimilar}
+                className="btn btn-secondary album-similar-toggle"
+                aria-pressed={showAll}
+                aria-label={showAll ? "Hide similar" : "Show similar"}
+                title={showAll ? "Hide similar" : "Show similar"}
+              >
+                <Images size={18} strokeWidth={1.75} />
+                <span className="album-similar-label">{showAll ? "Hide similar" : "Show similar"}</span>
+              </button>
+            ) : null}
+            {saveAll}
           </>
         )}
       </div>
-      {searching && (busy || hits) ? (
+    </div>
+  );
+
+  const footer = (
+    <BottomBar>
+      {selecting ? (
+        <div className="w-full">
+          {!selectedPhotos.length || !canDeleteSelection ? (
+            <p className="mb-2 text-center text-sm text-muted">
+              {!selectedPhotos.length ? "Tap photos to select them" : "You can only delete your own uploads"}
+            </p>
+          ) : null}
+          <div className="flex gap-2">
+            <button type="button" className={`btn btn-primary flex-1${downloading ? " shimmer-action" : ""}`} disabled={!selectedPhotos.length || downloading} aria-busy={downloading} onClick={() => saveMany(selectedPhotos)} aria-label={`Save ${selectedPhotos.length} selected ${selectedPhotos.length === 1 ? "item" : "items"}`}>
+              <Download size={20} /> {downloading ? "Preparing…" : "Save"}
+            </button>
+            <button type="button" className="btn btn-secondary flex-1" disabled={!canDeleteSelection || downloading} onClick={() => setDeletingMany([...selectedPhotos])} aria-haspopup="dialog">
+              <Trash2 size={20} /> Delete
+            </button>
+          </div>
+        </div>
+      ) : upload}
+    </BottomBar>
+  );
+
+  if (!all.length) return <>{heading}<EmptyAlbum />{footer}</>;
+
+  return (
+    <>
+      {heading}
+      <div className="album-filters">
+        <form onSubmit={submit} role="search">
+          <label htmlFor={searchId}>Search</label>
+          <div className="relative">
+            <Search size={20} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-faint" />
+            <input
+              id={searchId}
+              ref={searchInput}
+              type="search"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                if (!e.target.value.trim()) {
+                  ++searchRequest.current;
+                  setHits(null);
+                  setBusy(false);
+                  setSelected(new Set());
+                }
+              }}
+              placeholder="Guy in a red hoodie with a cake"
+              aria-label="Search photos"
+              className={`field album-search-input${query ? " has-query" : ""}`}
+              enterKeyHint="search"
+            />
+            {query ? (
+              <button type="button" onClick={clearSearch} className="btn-icon absolute top-1/2 right-0.5 -translate-y-1/2 border-0" aria-label="Clear search">
+                <X size={20} strokeWidth={1.75} />
+              </button>
+            ) : null}
+          </div>
+        </form>
+        <label>
+          <span>Added by</span>
+          <select className="field" value={author?.id ?? ""} onChange={(e) => {
+            const id = Number(e.target.value);
+            setAuthor(e.target.value ? { id, name: authors.get(id)! } : null);
+            setSelected(new Set());
+          }}>
+            <option value="">Everyone</option>
+            {[...authors].sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </label>
+      </div>
+      {author ? <div className="px-4"><button type="button" className="album-similar text-sm text-muted" onClick={() => {
+        setAuthor(null); setSelected(new Set());
+      }}>Clear filter</button></div> : null}
+      {error ? <p role="alert" className="px-4 pb-3 text-sm text-muted">{error}</p> : null}
+      {!busy && hits ? (
         <p className="px-5 pb-2 text-sm text-muted tabular-nums" aria-live="polite">
-          {busy ? "Searching…" : `${photos.length} found`}
+          {photos.length} found
         </p>
       ) : null}
 
-      {!photos.length ? <p className="px-4 py-16 text-center text-muted">No matching photos.</p> : null}
+      {!busy && !photos.length ? <p className="px-4 py-16 text-center text-muted">No matching photos</p> : null}
 
-      <ul className="grid grid-cols-3 gap-1 px-4">
+      {busy ? <PhotoGridSkeleton label="Searching photos" /> : <ul className="album-grid">
         {photos.map((p, i) => (
           <li key={p.id} className={fresh.has(p.id) ? "tile-in" : undefined}>
-            <button
-              onClick={() => open(i)}
-              className="relative block aspect-square w-full overflow-hidden rounded-ui bg-surface"
-              aria-label={`${p.kind === "video" ? "Video" : "Photo"} by ${p.author}`}
-            >
-              {p.thumb_url ? (
-                <img src={p.thumb_url} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
-              ) : (
-                <Film size={24} strokeWidth={1.5} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-faint" />
-              )}
-              {p.kind === "video" ? (
-                <span className="absolute bottom-1.5 left-1.5 flex size-6 items-center justify-center rounded-full bg-black/55 text-white">
-                  <Play size={12} />
-                </span>
-              ) : null}
-            </button>
+            <AlbumTile
+              photo={p}
+              selecting={selecting}
+              selected={selected.has(p.id)}
+              onOpen={() => open(i)}
+              onSelect={() => toggleSelected(p.id)}
+              onLongPress={() => { setSelecting(true); setSelected(new Set([p.id])); }}
+            />
           </li>
         ))}
-      </ul>
+      </ul>}
 
       <dialog ref={dialog} className="viewer" aria-label="Photo viewer" onClose={pauseVideos}>
         <div className="flex h-full flex-col">
@@ -180,6 +360,7 @@ export function Album({ eventId, photos: all, hidden }: { eventId: number; photo
             </button>
             <div className="min-w-0 flex-1 text-center text-sm">
               <p className="truncate font-medium">{current?.author}</p>
+              {current ? <p className="text-white/60">Added {addedAt.format(new Date(current.created_at))}</p> : null}
               <p className="text-white/60 tabular-nums">
                 {index + 1} of {photos.length}
               </p>
@@ -205,7 +386,7 @@ export function Album({ eventId, photos: all, hidden }: { eventId: number; photo
                     className="max-h-full w-full object-contain"
                   />
                 ) : (
-                  <img src={p.url} alt={`Photo by ${p.author}`} loading="lazy" className="max-h-full max-w-full object-contain" />
+                  <ShimmerImage src={p.url} alt={`Photo by ${p.author}`} loading="lazy" className="shimmer-image-contain size-full" />
                 )}
               </div>
             ))}
@@ -240,9 +421,20 @@ export function Album({ eventId, photos: all, hidden }: { eventId: number; photo
           onConfirm={() => remove(deleting)}
           onClose={() => setDeleting(null)}
         >
-          This {deleting.kind === "video" ? "video" : "photo"} will be permanently deleted from the album for everyone.
+          This {deleting.kind === "video" ? "video" : "photo"} will be permanently deleted from the album for everyone
         </DeleteDialog>
       ) : null}
+      {deletingMany ? (
+        <DeleteDialog
+          title={`Delete ${deletingMany.length === 1 ? "this item" : `${deletingMany.length} items`}?`}
+          confirmLabel={`Delete ${deletingMany.length === 1 ? "item" : `${deletingMany.length} items`}`}
+          onConfirm={() => removeMany(deletingMany)}
+          onClose={() => setDeletingMany(null)}
+        >
+          {deletingMany.length === 1 ? "This selected item will" : `These ${deletingMany.length} selected items will`} be permanently deleted from the album for everyone
+        </DeleteDialog>
+      ) : null}
+      {footer}
     </>
   );
 }

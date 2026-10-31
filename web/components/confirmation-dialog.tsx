@@ -46,7 +46,7 @@ export function ConfirmationDialog({
       await onConfirm();
       dialog.current?.close();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong. Try again.");
+      setError(e instanceof Error ? e.message : "Something went wrong. Try again");
     } finally {
       running.current = false;
       setPending(false);
@@ -91,7 +91,7 @@ export function ConfirmationDialog({
         <button type="button" className="btn btn-secondary" disabled={pending} onClick={() => dialog.current?.close()}>
           Cancel
         </button>
-        <button type="button" className={`${destructive ? "confirmation-destructive" : ""} btn btn-primary`} disabled={pending} onClick={confirm}>
+        <button type="button" className={`${destructive ? "confirmation-destructive" : ""} btn btn-primary${pending ? " shimmer-action" : ""}`} disabled={pending} onClick={confirm}>
           <span aria-live="polite">{pending ? pendingLabel : confirmLabel}</span>
         </button>
       </div>
