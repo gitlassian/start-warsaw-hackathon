@@ -35,7 +35,7 @@ export function Invite({ code, title }: { code: string; title: string }) {
         aria-labelledby="invite-title"
         onClick={(e) => e.target === e.currentTarget && dialog.current?.close()}
       >
-        <div className="mx-auto mb-2 h-1 w-9 rounded-full bg-line" aria-hidden />
+        <div className="mx-auto mb-2 h-1 w-9 rounded-ui bg-line" aria-hidden />
         <div className="flex items-center justify-between">
           <div className="min-w-0">
             <h2 id="invite-title" className="text-lg font-semibold">
@@ -48,7 +48,7 @@ export function Invite({ code, title }: { code: string; title: string }) {
           </button>
         </div>
 
-        <div className="mx-auto mt-3 w-fit rounded-card border border-line bg-white p-5">
+        <div className="mx-auto mt-3 w-fit rounded-ui border border-line bg-white p-5">
           {link ? <QRCodeSVG value={link} size={208} marginSize={0} title={`Join ${title}`} /> : <div className="size-52" />}
         </div>
         <button
@@ -56,7 +56,7 @@ export function Invite({ code, title }: { code: string; title: string }) {
             await navigator.clipboard.writeText(code);
             setCopied(true);
           }}
-          className="mx-auto mt-4 flex h-12 items-center gap-2 rounded-full px-4 font-mono text-2xl tracking-[0.3em] active:bg-surface"
+          className="mx-auto mt-4 flex h-12 items-center gap-2 rounded-ui px-4 font-mono text-2xl tracking-[0.3em] active:bg-surface"
           aria-label={`Copy code ${code}`}
         >
           {code}

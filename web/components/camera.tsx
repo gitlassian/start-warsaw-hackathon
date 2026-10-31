@@ -93,7 +93,7 @@ export function Camera({ onShot, onClose }: { onShot: (file: File) => void; onCl
 
         {shots ? (
           <p
-            className="absolute top-[max(1rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1.5 text-sm tabular-nums"
+            className="absolute top-[max(1rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 rounded-ui bg-black/50 px-3 py-1.5 text-sm tabular-nums"
             aria-live="polite"
           >
             {shots} added

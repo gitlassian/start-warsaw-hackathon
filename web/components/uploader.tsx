@@ -7,7 +7,7 @@ import { Camera } from "@/components/camera";
 import { uploadPhoto } from "@/lib/client";
 
 const tile =
-  "flex h-28 flex-col items-center justify-center gap-2 rounded-card bg-surface font-medium transition-transform active:scale-[0.97]";
+  "flex h-28 flex-col items-center justify-center gap-2 rounded-ui bg-surface font-medium transition-transform active:scale-[0.97]";
 
 export function Uploader({ eventId }: { eventId: number }) {
   const input = useRef<HTMLInputElement>(null);
@@ -105,7 +105,7 @@ export function Uploader({ eventId }: { eventId: number }) {
         aria-label="Add to album"
         onClick={(e) => e.target === e.currentTarget && sheet.current?.close()}
       >
-        <div className="mx-auto mb-4 h-1 w-9 rounded-full bg-line" aria-hidden />
+        <div className="mx-auto mb-4 h-1 w-9 rounded-ui bg-line" aria-hidden />
         <div className="grid grid-cols-2 gap-3">
           <button onClick={pickFromGallery} className={tile}>
             <Images size={26} strokeWidth={1.5} /> Gallery

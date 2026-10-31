@@ -81,11 +81,20 @@ def duplicate_groups(items: list[Item]) -> list[tuple[int, list[int]]]:
     return sorted(out)
 
 
+# CLIP ViT-B/32 scores sit in a narrow band: about 0.2 for unrelated pictures, 0.23 to 0.29 for a real match.
+# Show only what actually matches, so "pizza" in an album with no pizza finds nothing instead of twelve random photos.
+MIN_SCORE = 0.22  # the best result must reach this, or nothing is shown
+WINDOW = 0.04  # ...and only results this close to the best one are kept
+
+
 def search_items(items: list[Item], query: str, k: int, skip: set[int]) -> list[tuple[int, float]]:
-    """Photo ids best matching `query`, best first; ids in `skip` are left out."""
+    """Photos that match `query`, best first; ids in `skip` are left out."""
     candidates = [n for n, i in enumerate(items) if i.id not in skip]
     if not candidates:
         return []
     _, vectors = _split(items)
     hits = search.top_k(vectors, embedder.embed_text(query), k, candidates)
-    return [(items[n].id, score) for n, score in hits]
+    if not hits or hits[0][1] < MIN_SCORE:
+        return []
+    best = hits[0][1]
+    return [(items[n].id, score) for n, score in hits if score >= best - WINDOW]

@@ -47,7 +47,7 @@ export function EventForm({ event }: { event?: EventItem }) {
         const saved = event
           ? await api<EventItem>(`/api/events/${event.id}`, { method: "PUT", body: { ...body, remove_cover: removeCover } })
           : await api<EventItem>("/api/events", { body });
-        router.replace(`/e/${saved.id}`);
+        router.replace(`/e/${saved.code}`);
         router.refresh();
       } catch (e) {
         setError((e as Error).message);

@@ -6,7 +6,7 @@ import { DeleteDialog } from "@/components/delete-dialog";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
-import type { DuplicatesResult, Photo, SearchResult } from "@/lib/types";
+import type { Photo, SearchResult } from "@/lib/types";
 
 async function save(photo: Photo) {
   // On phones the share sheet's "Save Image" puts it in the camera roll; a download would land in Files.
@@ -22,41 +22,49 @@ async function save(photo: Photo) {
   location.href = photo.download_url;
 }
 
-export function Album({ eventId, photos: all }: { eventId: number; photos: Photo[] }) {
+export function Album({ eventId, photos: all, hidden }: { eventId: number; photos: Photo[]; hidden: number[] }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const strip = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
+  const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<number[] | null>(null); // photo ids, best match first
-  const [dropped, setDropped] = useState<Set<number> | null>(null); // duplicates hidden; null = showing all
+  const [showAll, setShowAll] = useState(false); // near-duplicates are tucked away unless asked for
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Photo | null>(null);
 
-  // Search results replace the grid (best match first); hidden duplicates are removed from either view.
+  // Search results replace the grid (best match first); similar photos stay hidden in either view.
+  const hiddenIds = new Set(hidden);
   const byId = new Map(all.map((p) => [p.id, p]));
   const base = hits ? hits.flatMap((id) => byId.get(id) ?? []) : all;
-  const photos = dropped ? base.filter((p) => !dropped.has(p.id)) : base;
+  const photos = showAll ? base : base.filter((p) => !hiddenIds.has(p.id));
   const current = photos[index];
+
+  // Photos that arrive while the album is open fade in; the ones already there at load stay still.
+  const [seen] = useState(() => new Set(all.map((p) => p.id)));
+  const fresh = new Set(all.filter((p) => !seen.has(p.id)).map((p) => p.id));
+  useEffect(() => {
+    all.forEach((p) => seen.add(p.id));
+  }, [all, seen]);
 
   // Only the video on screen may play.
   const pauseVideos = () => strip.current?.querySelectorAll("video").forEach((v) => v.pause());
   useEffect(pauseVideos, [index]);
 
-  async function runSearch(q: string, hideDuplicates: boolean) {
+  async function runSearch(q: string, includeSimilar: boolean) {
     if (!q) return setHits(null);
     const { results } = await api<SearchResult>(
-      `/api/events/${eventId}/search?q=${encodeURIComponent(q)}${hideDuplicates ? "" : "&all=true"}`,
+      `/api/events/${eventId}/search?q=${encodeURIComponent(q)}${includeSimilar ? "&all=true" : ""}`,
     );
     setHits(results.map((r) => r.id));
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const q = query.trim();
     setBusy(true);
     try {
-      await runSearch(q, dropped !== null);
+      await runSearch(query.trim(), showAll);
     } catch (err) {
       alert((err as Error).message);
     } finally {
@@ -64,25 +72,13 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
     }
   }
 
-  async function toggleDuplicates() {
-    if (dropped) {
-      setDropped(null);
-      if (hits) await runSearch(query.trim(), false).catch(() => {});
-      return;
-    }
-    setBusy(true);
-    try {
-      const { groups } = await api<DuplicatesResult>(`/api/events/${eventId}/duplicates`);
-      setDropped(new Set(groups.flatMap((g) => g.drop)));
-      if (hits) await runSearch(query.trim(), true);
-    } catch (err) {
-      alert((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  async function toggleSimilar() {
+    setShowAll(!showAll);
+    if (hits) await runSearch(query.trim(), !showAll).catch(() => {});
   }
 
-  function clearSearch() {
+  function closeSearch() {
+    setSearching(false);
     setQuery("");
     setHits(null);
   }
@@ -105,50 +101,60 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
 
   return (
     <>
-      <div className="px-4 pb-3">
-        <form onSubmit={submit} role="search" className="relative">
-          <Search size={20} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search photos: dog, laptop, sunset…"
-            aria-label="Search photos"
-            className="field pr-11 pl-11"
-            enterKeyHint="search"
-          />
-          {query ? (
-            <button type="button" onClick={clearSearch} className="btn-icon absolute top-1/2 right-0.5 -translate-y-1/2 border-0" aria-label="Clear search">
+      <div className="flex items-center gap-2 px-4 pb-3">
+        {searching ? (
+          <form onSubmit={submit} role="search" className="relative flex-1">
+            <Search size={20} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-faint" />
+            <input
+              autoFocus
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search photos: dog, laptop, sunset…"
+              aria-label="Search photos"
+              className="field pr-11 pl-11"
+              enterKeyHint="search"
+            />
+            <button type="button" onClick={closeSearch} className="btn-icon absolute top-1/2 right-0.5 -translate-y-1/2 border-0" aria-label="Close search">
               <X size={20} strokeWidth={1.75} />
             </button>
-          ) : null}
-        </form>
-        <div className="mt-2 flex items-center gap-3 text-sm">
-          <button
-            type="button"
-            onClick={toggleDuplicates}
-            disabled={busy}
-            aria-pressed={dropped !== null}
-            className={`rounded-full border px-3 py-1.5 font-medium transition-colors disabled:opacity-40 ${
-              dropped ? "border-accent bg-accent text-on-accent" : "border-line text-fg"
-            }`}
-          >
-            Hide duplicates
-          </button>
-          <span className="text-muted tabular-nums" aria-live="polite">
-            {busy ? "Working…" : dropped ? `${dropped.size} hidden` : hits ? `${photos.length} found` : ""}
-          </span>
-        </div>
+          </form>
+        ) : (
+          <>
+            <div className="min-w-0 flex-1 text-sm text-muted" aria-live="polite">
+              {hidden.length ? (
+                <button type="button" onClick={toggleSimilar} className="py-2 text-left tabular-nums underline-offset-4 hover:underline">
+                  {showAll ? "Hide similar photos" : `${hidden.length} similar hidden · Show`}
+                </button>
+              ) : null}
+            </div>
+            <button type="button" onClick={() => setSearching(true)} className="btn-icon shrink-0" aria-label="Search photos">
+              <Search size={20} strokeWidth={1.75} />
+            </button>
+            <a
+              href={`/api/events/${eventId}/download${showAll ? "?all=true" : ""}`}
+              download
+              className="btn btn-secondary h-11 shrink-0 px-4 text-sm"
+            >
+              <Download size={18} strokeWidth={1.75} /> Save all
+            </a>
+          </>
+        )}
       </div>
+      {searching && (busy || hits) ? (
+        <p className="px-5 pb-2 text-sm text-muted tabular-nums" aria-live="polite">
+          {busy ? "Searching…" : `${photos.length} found`}
+        </p>
+      ) : null}
 
       {!photos.length ? <p className="px-4 py-16 text-center text-muted">No matching photos.</p> : null}
 
       <ul className="grid grid-cols-3 gap-1 px-4">
         {photos.map((p, i) => (
-          <li key={p.id}>
+          <li key={p.id} className={fresh.has(p.id) ? "tile-in" : undefined}>
             <button
               onClick={() => open(i)}
-              className="relative block aspect-square w-full overflow-hidden rounded-thumb bg-surface"
+              className="relative block aspect-square w-full overflow-hidden rounded-ui bg-surface"
               aria-label={`${p.kind === "video" ? "Video" : "Photo"} by ${p.author}`}
             >
               {p.thumb_url ? (

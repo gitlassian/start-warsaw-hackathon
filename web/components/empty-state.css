@@ -91,7 +91,7 @@
   margin-top: 1.75rem;
   padding: 0.75rem;
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-ui);
   text-align: left;
 }
 

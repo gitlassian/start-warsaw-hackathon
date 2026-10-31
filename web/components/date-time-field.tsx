@@ -95,7 +95,7 @@ function Wheels({ value, onChange }: { value: Date; onChange: React.Dispatch<Rea
 
   return (
     <div className="relative flex">
-      <div className="pointer-events-none absolute inset-x-0 top-1/2 h-10 -translate-y-1/2 rounded-xl bg-surface" aria-hidden />
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 h-10 -translate-y-1/2 rounded-ui bg-surface" aria-hidden />
       <Wheel
         label="Day"
         className="flex-[2.2] pr-4 text-right"
@@ -175,7 +175,7 @@ export function DateTimeField({
         onClose={() => setDraft(null)}
         onClick={(e) => e.target === e.currentTarget && dialog.current?.close()}
       >
-        <div className="mx-auto mb-2 h-1 w-9 rounded-full bg-line" aria-hidden />
+        <div className="mx-auto mb-2 h-1 w-9 rounded-ui bg-line" aria-hidden />
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold">{label}</h2>

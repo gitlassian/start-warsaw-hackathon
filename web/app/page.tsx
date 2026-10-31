@@ -22,11 +22,11 @@ async function Content() {
         <ul className="flex flex-col px-2">
           {events.map((e) => (
             <li key={e.id}>
-              <Link href={`/e/${e.id}`} className="flex items-center gap-3 rounded-card p-2 active:bg-surface">
+              <Link href={`/e/${e.code}`} className="flex items-center gap-3 rounded-ui p-2 active:bg-surface">
                 {e.preview_url ? (
-                  <img src={e.preview_url} alt="" className="size-14 shrink-0 rounded-thumb border border-line object-cover" />
+                  <img src={e.preview_url} alt="" className="size-14 shrink-0 rounded-ui border border-line object-cover" />
                 ) : (
-                  <span className="flex size-14 shrink-0 items-center justify-center rounded-thumb bg-surface text-faint">
+                  <span className="flex size-14 shrink-0 items-center justify-center rounded-ui bg-surface text-faint">
                     <Images size={22} strokeWidth={1.5} />
                   </span>
                 )}

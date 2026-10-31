@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { BottomBar } from "@/components/bars";
+import { ArrowDown } from "@/components/icons";
 import { api } from "@/lib/client";
+import { fireConfetti } from "@/lib/confetti";
 
 export function CodeForm() {
   const router = useRouter();
@@ -29,7 +31,7 @@ export function CodeForm() {
         autoCapitalize="characters"
         spellCheck={false}
         placeholder="ABC123"
-        className="mt-4 h-16 w-full rounded-card border border-line bg-bg text-center font-mono text-3xl tracking-[0.3em] uppercase focus-visible:border-accent focus-visible:outline-none"
+        className="mt-4 h-16 w-full rounded-ui border border-line bg-bg text-center font-mono text-3xl tracking-[0.3em] uppercase focus-visible:border-accent focus-visible:outline-none"
       />
       <p className="mt-4 text-center text-sm text-muted">Or scan the host’s QR code with your camera.</p>
       <BottomBar>
@@ -52,15 +54,21 @@ export function JoinButton({ code }: { code: string }) {
         <p role="alert" className="mb-2 px-1 text-sm">
           {error}
         </p>
-      ) : null}
+      ) : (
+        <p className="mb-3 flex items-center justify-center gap-1.5 text-sm text-muted">
+          Tap <span className="font-medium text-fg">Join event</span> to open the album
+          <ArrowDown size={16} className="nudge" />
+        </p>
+      )}
       <button
         disabled={pending}
-        className="btn btn-primary w-full"
+        className={`btn btn-primary w-full ${pending ? "" : "join-cta"}`}
         onClick={() =>
           startTransition(async () => {
             try {
-              const { id } = await api<{ id: number }>(`/api/codes/${code}/join`, { body: {} });
-              router.replace(`/e/${id}`);
+              await api(`/api/codes/${code}/join`, { body: {} });
+              fireConfetti(); // keeps falling over the album, which opens right behind it
+              router.replace(`/e/${code.toUpperCase()}`);
             } catch (e) {
               setError((e as Error).message);
             }

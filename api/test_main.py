@@ -1,4 +1,5 @@
 import io
+import zipfile
 from datetime import datetime
 
 import jwt
@@ -193,7 +194,7 @@ def test_duplicates_and_search(setup):
     found = guest.get(f"/api/events/{ev['id']}/search", params={"q": "red"}).json()["results"]
     assert [r["id"] for r in found][0] == sharp and blurry not in [r["id"] for r in found]
     everything = guest.get(f"/api/events/{ev['id']}/search", params={"q": "red", "all": True}).json()["results"]
-    assert {r["id"] for r in everything} == {sharp, blurry, blue, green}
+    assert {r["id"] for r in everything} == {sharp, blurry}  # both red; the blue and green ones don't match
     assert [r["id"] for r in guest.get(f"/api/events/{ev['id']}/search", params={"q": "blue", "k": 1}).json()["results"]] == [blue]
 
     assert stranger.get(f"/api/events/{ev['id']}/duplicates").status_code == 404
@@ -224,7 +225,8 @@ def test_unreadable_photo_does_not_break_the_album(setup):
     assert [r["id"] for r in found] == [good] and broken not in [r["id"] for r in found]
 
 
-def test_capture_time_comes_from_exif_of_the_original():
+def test_capture_time_comes_from_exif_of_the_original(monkeypatch):
+    monkeypatch.setattr(photo_ai, "embedder", FakeEmbedder())
     data = scene(7, tint=0, exif_time="2026:11:01 18:30:00")
     result = photo_ai.analyze(data, head=data[:2000])
     assert datetime.fromtimestamp(result.taken_at) == datetime(2026, 11, 1, 18, 30)
@@ -383,3 +385,92 @@ def test_videos_may_be_larger_than_photos(setup, monkeypatch):
     too_big = owner.post(f"/api/events/{ev['id']}/photos", json={"key": photo_key, "thumb_key": photo_key})
     assert too_big.status_code == 413 and photo_key in main.s3.deleted
     assert owner.post(f"/api/events/{ev['id']}/photos", json={"key": video_key, "thumb_key": video_key}).status_code == 200
+
+
+def test_version_changes_when_photos_are_added_or_removed(setup):
+    owner, guest, stranger = setup(1), setup(2), setup(3)
+    ev = owner.post("/api/events", json=EVENT).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    url = f"/api/events/{ev['id']}/version"
+    empty = owner.get(url).json()["version"]
+    assert empty == "0:0"
+
+    first = upload(guest, ev["id"], scene(1, tint=0))
+    after_add = owner.get(url).json()["version"]
+    assert after_add == f"1:{first}" != empty
+
+    second = upload(owner, ev["id"], scene(2, tint=1))
+    assert guest.get(url).json()["version"] == f"2:{second}"
+    owner.delete(f"/api/photos/{second}")
+    assert owner.get(url).json()["version"] == after_add
+    # remove one and add one between two polls: the count stays, the latest id still changes
+    third = upload(owner, ev["id"], scene(3, tint=2))
+    owner.delete(f"/api/photos/{first}")
+    assert owner.get(url).json()["version"] == f"1:{third}"
+
+    assert stranger.get(url).status_code == 404
+    assert TestClient(main.app).get(url).status_code == 401
+
+
+def test_signed_urls_are_stable_for_an_hour_then_renewed(setup, monkeypatch):
+    signed = []
+
+    def fake_sign(op, Params, ExpiresIn):
+        signed.append(Params["Key"])
+        return f"{main.S3_ENDPOINT}/{Params['Key']}?sig={len(signed)}"
+
+    monkeypatch.setattr(main.s3, "generate_presigned_url", fake_sign)
+    clock = [1000.0]
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock[0])
+
+    first = main.get_url("u/1/stable.jpg")
+    assert main.get_url("u/1/stable.jpg") == first and len(signed) == 1  # same string: browsers keep the cached image
+    assert main.get_url("u/1/stable.jpg", download=True) != first  # the download link is its own URL
+    clock[0] += main.URL_REUSE + 1
+    assert main.get_url("u/1/stable.jpg") != first  # renewed well before the 6 h expiry
+
+
+def test_download_zips_the_originals_without_duplicates(setup):
+    owner, guest, stranger = setup(1), setup(2), setup(3)
+    ev = owner.post("/api/events", json={**EVENT, "title": "Anna’s Birthday!"}).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    sharp = scene(1, tint=0)
+    blurry = scene(1, tint=0, blur=3)  # same scene on another phone: a duplicate
+    blue, green = scene(2, tint=2), scene(3, tint=1)
+    upload(guest, ev["id"], sharp)
+    upload(owner, ev["id"], blurry)
+    upload(guest, ev["id"], blue)
+    upload(owner, ev["id"], green)
+    url = f"/api/events/{ev['id']}/download"
+
+    res = guest.get(url)
+    assert res.status_code == 200 and res.headers["content-type"] == "application/zip"
+    assert res.headers["content-disposition"] == 'attachment; filename="anna-s-birthday.zip"'
+    with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
+        assert zf.testzip() is None
+        names = zf.namelist()
+        assert names == ["001-u2.jpg", "002-u2.jpg", "003-u1.jpg"]  # upload order, author in the name, no gap for the duplicate
+        assert sorted(zf.read(n) for n in names) == sorted([sharp, blue, green])  # the originals, byte for byte
+
+    everything = zipfile.ZipFile(io.BytesIO(guest.get(url, params={"all": True}).content))
+    assert len(everything.namelist()) == 4
+
+    assert stranger.get(url).status_code == 404
+    assert TestClient(main.app).get(url).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "scores, expected",
+    [
+        ([0.50, 0.48, 0.30, 0.10], [1, 2]),  # only what is close to the best match
+        ([0.26, 0.25, 0.24, 0.23, 0.21], [1, 2, 3, 4]),  # CLIP-sized scores: a spread of 0.04 is kept
+        ([0.215, 0.21, 0.20, 0.19], []),  # nothing reaches the floor: nothing matches
+    ],
+)
+def test_search_shows_only_what_matches(monkeypatch, scores, expected):
+    monkeypatch.setattr(photo_ai, "embedder", FakeEmbedder())
+    items = [
+        photo_ai.Item(i, "0" * 16, 1.0, 10**6, None, np.array([c, np.sqrt(1 - c**2), 0], dtype=np.float32).tobytes())
+        for i, c in enumerate(scores, 1)
+    ]
+    assert [i for i, _ in photo_ai.search_items(items, "red", 10, set())] == expected
