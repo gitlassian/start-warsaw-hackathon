@@ -24,13 +24,13 @@ export function Account({ user }: { user: User }) {
       <div
         popover="auto"
         id="account"
-        className="fixed inset-auto top-[calc(env(safe-area-inset-top)+3.5rem)] right-3 m-0 w-64 rounded-card border border-line bg-bg p-1.5 text-fg shadow-[0_8px_24px_rgb(0_0_0/0.12)]"
+        className="fixed inset-auto top-[calc(env(safe-area-inset-top)+3.5rem)] right-3 m-0 w-64 rounded-ui border border-line bg-bg p-1.5 text-fg shadow-[0_8px_24px_rgb(0_0_0/0.12)]"
       >
         <div className="px-3 py-2">
           <p className="truncate font-medium">{user.name}</p>
           <p className="truncate text-sm text-muted">{user.email}</p>
         </div>
-        <button onClick={signOut} className="flex h-11 w-full items-center gap-3 rounded-thumb px-3 active:bg-surface">
+        <button onClick={signOut} className="flex h-11 w-full items-center gap-3 rounded-ui px-3 active:bg-surface">
           <LogOut size={18} strokeWidth={1.75} /> Sign out
         </button>
       </div>

@@ -37,6 +37,13 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
   const photos = dropped ? base.filter((p) => !dropped.has(p.id)) : base;
   const current = photos[index];
 
+  // Photos that arrive while the album is open fade in; the ones already there at load stay still.
+  const [seen] = useState(() => new Set(all.map((p) => p.id)));
+  const fresh = new Set(all.filter((p) => !seen.has(p.id)).map((p) => p.id));
+  useEffect(() => {
+    all.forEach((p) => seen.add(p.id));
+  }, [all, seen]);
+
   // Only the video on screen may play.
   const pauseVideos = () => strip.current?.querySelectorAll("video").forEach((v) => v.pause());
   useEffect(pauseVideos, [index]);
@@ -136,7 +143,7 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
             onClick={toggleDuplicates}
             disabled={busy}
             aria-pressed={dropped !== null}
-            className={`rounded-full border px-3 py-1.5 font-medium transition-colors disabled:opacity-40 ${
+            className={`rounded-ui border px-3 py-1.5 font-medium transition-colors disabled:opacity-40 ${
               dropped ? "border-accent bg-accent text-on-accent" : "border-line text-fg"
             }`}
           >
@@ -152,10 +159,10 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
 
       <ul className="grid grid-cols-3 gap-1 px-4">
         {photos.map((p, i) => (
-          <li key={p.id}>
+          <li key={p.id} className={fresh.has(p.id) ? "tile-in" : undefined}>
             <button
               onClick={() => open(i)}
-              className="relative block aspect-square w-full overflow-hidden rounded-thumb bg-surface"
+              className="relative block aspect-square w-full overflow-hidden rounded-ui bg-surface"
               aria-label={`${p.kind === "video" ? "Video" : "Photo"} by ${p.author}`}
             >
               {p.thumb_url ? (

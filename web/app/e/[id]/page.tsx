@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/skeleton";
 import { Album } from "@/components/album";
 import { BottomBar, TopBar } from "@/components/bars";
 import { Invite } from "@/components/invite";
+import { LiveUpdates } from "@/components/live-updates";
 import { Uploader } from "@/components/uploader";
 import { When } from "@/components/when";
 import { apiGet } from "@/lib/server";
@@ -14,6 +15,7 @@ async function Content({ params }: PageProps<"/e/[id]">) {
   const { id } = await params;
   const event = await apiGet<EventDetail>(`/api/events/${id}`, `/e/${id}`);
   const count = event.photos.length;
+  const version = `${count}:${Math.max(0, ...event.photos.map((p) => p.id))}`; // same shape as /api/events/{id}/version
 
   return (
     <>
@@ -32,7 +34,7 @@ async function Content({ params }: PageProps<"/e/[id]">) {
       />
       <div className="px-4">
         {event.cover_url ? (
-          <img src={event.cover_url} alt="" className="aspect-[3/2] w-full rounded-card border border-line object-cover" />
+          <img src={event.cover_url} alt="" className="aspect-[3/2] w-full rounded-ui border border-line object-cover" />
         ) : null}
         <h1 className="mt-5 text-[26px] leading-tight font-semibold tracking-tight text-balance">{event.title}</h1>
         <p className="mt-1 text-muted">
@@ -43,6 +45,7 @@ async function Content({ params }: PageProps<"/e/[id]">) {
           Photos <span className="text-sm font-normal text-muted tabular-nums">{count || ""}</span>
         </h2>
       </div>
+      <LiveUpdates eventId={event.id} version={version} />
       <Album eventId={event.id} photos={event.photos} />
       <BottomBar>
         <Uploader eventId={event.id} />

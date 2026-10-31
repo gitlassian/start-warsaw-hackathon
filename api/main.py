@@ -3,6 +3,7 @@ import logging
 import os
 import secrets
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -32,6 +33,7 @@ S3_ENDPOINT = env("S3_ENDPOINT", "http://localhost:9000")
 S3_PUBLIC_URL = env("S3_PUBLIC_URL", "/s3")
 S3_BUCKET = env("S3_BUCKET", "rollcall")
 URL_TTL = 6 * 3600
+URL_REUSE = 3600  # hand out the same signed URL for an hour, so a refresh doesn't make browsers re-download every photo
 MAX_PHOTO_BYTES = 50 * 1024 * 1024
 MAX_VIDEO_BYTES = 200 * 1024 * 1024
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I: codes get typed by hand
@@ -159,11 +161,19 @@ def public(url: str) -> str:
     return S3_PUBLIC_URL + url.removeprefix(S3_ENDPOINT)
 
 
+_signed: dict[tuple[str, bool], tuple[float, str]] = {}
+
+
 def get_url(key: str, download: bool = False) -> str:
+    cached = _signed.get((key, download))
+    if cached and time.monotonic() - cached[0] < URL_REUSE:
+        return cached[1]
     params = {"Bucket": S3_BUCKET, "Key": key}
     if download:
         params["ResponseContentDisposition"] = f'attachment; filename="{key.rsplit("/", 1)[-1]}"'
-    return public(s3.generate_presigned_url("get_object", Params=params, ExpiresIn=URL_TTL))
+    url = public(s3.generate_presigned_url("get_object", Params=params, ExpiresIn=URL_TTL))
+    _signed[(key, download)] = (time.monotonic(), url)
+    return url
 
 
 def is_heif(key: str) -> bool:
@@ -412,6 +422,14 @@ def delete_event(event_id: int, user: User = Depends(current_user), s: Session =
     s.delete(e)
     s.commit()
     return {"ok": True}
+
+
+@api.get("/events/{event_id}/version")
+def event_version(event_id: int, user: User = Depends(current_user), s: Session = Depends(db)):
+    """Changes whenever a photo is added or removed. The album page polls this instead of re-fetching the album."""
+    member_event(event_id, user, s)
+    count, latest = s.execute(select(func.count(Photo.id), func.max(Photo.id)).where(Photo.event_id == event_id)).one()
+    return {"version": f"{count}:{latest or 0}"}
 
 
 class PhotoIn(BaseModel):

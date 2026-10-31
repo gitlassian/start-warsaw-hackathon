@@ -383,3 +383,46 @@ def test_videos_may_be_larger_than_photos(setup, monkeypatch):
     too_big = owner.post(f"/api/events/{ev['id']}/photos", json={"key": photo_key, "thumb_key": photo_key})
     assert too_big.status_code == 413 and photo_key in main.s3.deleted
     assert owner.post(f"/api/events/{ev['id']}/photos", json={"key": video_key, "thumb_key": video_key}).status_code == 200
+
+
+def test_version_changes_when_photos_are_added_or_removed(setup):
+    owner, guest, stranger = setup(1), setup(2), setup(3)
+    ev = owner.post("/api/events", json=EVENT).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    url = f"/api/events/{ev['id']}/version"
+    empty = owner.get(url).json()["version"]
+    assert empty == "0:0"
+
+    first = upload(guest, ev["id"], scene(1, tint=0))
+    after_add = owner.get(url).json()["version"]
+    assert after_add == f"1:{first}" != empty
+
+    second = upload(owner, ev["id"], scene(2, tint=1))
+    assert guest.get(url).json()["version"] == f"2:{second}"
+    owner.delete(f"/api/photos/{second}")
+    assert owner.get(url).json()["version"] == after_add
+    # remove one and add one between two polls: the count stays, the latest id still changes
+    third = upload(owner, ev["id"], scene(3, tint=2))
+    owner.delete(f"/api/photos/{first}")
+    assert owner.get(url).json()["version"] == f"1:{third}"
+
+    assert stranger.get(url).status_code == 404
+    assert TestClient(main.app).get(url).status_code == 401
+
+
+def test_signed_urls_are_stable_for_an_hour_then_renewed(setup, monkeypatch):
+    signed = []
+
+    def fake_sign(op, Params, ExpiresIn):
+        signed.append(Params["Key"])
+        return f"{main.S3_ENDPOINT}/{Params['Key']}?sig={len(signed)}"
+
+    monkeypatch.setattr(main.s3, "generate_presigned_url", fake_sign)
+    clock = [1000.0]
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock[0])
+
+    first = main.get_url("u/1/stable.jpg")
+    assert main.get_url("u/1/stable.jpg") == first and len(signed) == 1  # same string: browsers keep the cached image
+    assert main.get_url("u/1/stable.jpg", download=True) != first  # the download link is its own URL
+    clock[0] += main.URL_REUSE + 1
+    assert main.get_url("u/1/stable.jpg") != first  # renewed well before the 6 h expiry
