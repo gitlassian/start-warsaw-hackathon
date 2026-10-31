@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ChevronRight, Images, JoinIcon, Plus } from "@/components/icons";
 import { Account } from "@/components/account";
 import { BottomBar, TopBar } from "@/components/bars";
-import { Empty, EmptyRoll } from "@/components/empty";
+import { EmptyEvents } from "@/components/empty-events";
 import { When } from "@/components/when";
 import { apiGet } from "@/lib/server";
 import type { EventItem, User } from "@/lib/types";
@@ -17,7 +17,7 @@ async function Content() {
 
   return (
     <>
-      <TopBar title={<img src="/logo.svg" alt="RollCall" className="-ml-1 h-8 dark:invert" />} right={<Account user={me} />} />
+      <TopBar divider title={<img src="/logo.svg" alt="RollCall" className="-ml-1 h-8 dark:invert" />} right={<Account user={me} />} />
       {events.length ? (
         <ul className="flex flex-col px-2">
           {events.map((e) => (
@@ -42,16 +42,16 @@ async function Content() {
           ))}
         </ul>
       ) : (
-        <Empty art={<EmptyRoll />} title="No events yet">
-          Create an event for your party, or join one with the code from the host.
-        </Empty>
+        <EmptyEvents />
       )}
       <BottomBar>
-        <Link href="/join" className="btn btn-secondary size-12 shrink-0 p-0" aria-label="Join event">
-          <JoinIcon size={22} />
-        </Link>
+        {events.length ? (
+          <Link href="/join" className="btn btn-secondary size-12 shrink-0 p-0" aria-label="Join event">
+            <JoinIcon size={22} />
+          </Link>
+        ) : null}
         <Link href="/new" className="btn btn-primary flex-1">
-          <Plus size={20} strokeWidth={1.75} /> New event
+          <Plus size={20} strokeWidth={1.75} /> {events.length ? "New event" : "Create event"}
         </Link>
       </BottomBar>
     </>

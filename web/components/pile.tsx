@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import "./pile.css";
 
 // Visible layers of the pile, bottom to top; prints deeper than these wait under SLOTS[0].
 const SLOTS = [
@@ -56,7 +57,7 @@ export function Pile({ cover, label }: { cover: string | null; label: string }) 
       onFocus={() => (paused.current = true)}
       onBlur={() => (paused.current = false)}
       aria-label={`${label}. Shuffle the photos`}
-      className="relative block min-h-[20rem] w-full flex-1 cursor-pointer"
+      className="photo-pile"
     >
       {/* Fixed DOM order: only positions change, so prints glide instead of re-mounting and re-dropping. */}
       {photos.map((src, photo) => {
@@ -66,7 +67,7 @@ export function Pile({ cover, label }: { cover: string | null; label: string }) 
           <span
             key={photo}
             data-tuck={n && at === 0 ? (n % 2 ? "a" : "b") : undefined}
-            className="print absolute top-1/2 left-1/2 flex aspect-[4/5] w-[min(56%,15rem)] bg-white p-[3.5%]"
+            className="print"
             style={
               {
                 zIndex: at,
@@ -81,13 +82,14 @@ export function Pile({ cover, label }: { cover: string | null; label: string }) 
               } as React.CSSProperties
             }
           >
-            <img
-              src={src}
-              alt=""
-              draggable={false}
-              fetchPriority={at >= count - 2 ? "high" : "low"}
-              className="size-full bg-[#e5e5e5] object-cover"
-            />
+            <span className="print-image">
+              <img
+                src={src}
+                alt=""
+                draggable={false}
+                fetchPriority={at >= count - 2 ? "high" : "low"}
+              />
+            </span>
           </span>
         );
       })}

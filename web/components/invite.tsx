@@ -37,16 +37,18 @@ export function Invite({ code, title }: { code: string; title: string }) {
       >
         <div className="mx-auto mb-2 h-1 w-9 rounded-full bg-line" aria-hidden />
         <div className="flex items-center justify-between">
-          <h2 id="invite-title" className="text-lg font-semibold">
-            Invite people
-          </h2>
-          <button onClick={() => dialog.current?.close()} className="btn-icon" aria-label="Close">
+          <div className="min-w-0">
+            <h2 id="invite-title" className="text-lg font-semibold">
+              Invite people
+            </h2>
+            <p className="text-muted">Scan with the camera, or enter the code in RollCall.</p>
+          </div>
+          <button onClick={() => dialog.current?.close()} className="btn-icon shrink-0" aria-label="Close">
             <X size={22} strokeWidth={1.75} />
           </button>
         </div>
-        <p className="text-muted">Scan with the camera, or enter the code in RollCall.</p>
 
-        <div className="mx-auto mt-6 w-fit rounded-card border border-line bg-white p-5">
+        <div className="mx-auto mt-3 w-fit rounded-card border border-line bg-white p-5">
           {link ? <QRCodeSVG value={link} size={208} marginSize={0} title={`Join ${title}`} /> : <div className="size-52" />}
         </div>
         <button

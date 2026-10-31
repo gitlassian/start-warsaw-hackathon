@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { ChevronLeft } from "@/components/icons";
 
-export function TopBar({ back, title, right }: { back?: string; title?: React.ReactNode; right?: React.ReactNode }) {
+export function TopBar({ back, title, right, divider = false }: { back?: string; title?: React.ReactNode; right?: React.ReactNode; divider?: boolean }) {
   return (
-    <header className="sticky top-0 z-10 bg-bg pt-[env(safe-area-inset-top)]">
+    <header className={`sticky top-0 z-10 bg-bg pt-[env(safe-area-inset-top)]${divider ? " border-b border-line" : ""}`}>
       <div className="flex h-14 items-center gap-2 px-4">
         {back ? (
           <Link href={back} className="btn-icon" aria-label="Back">

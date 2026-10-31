@@ -1,7 +1,8 @@
 "use client";
 
 import { Download, Film, Play, Search, Trash2, X } from "@/components/icons";
-import { Empty, EmptyGrid } from "@/components/empty";
+import { EmptyAlbum } from "@/components/empty-album";
+import { DeleteDialog } from "@/components/delete-dialog";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
@@ -30,6 +31,7 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
   const [hits, setHits] = useState<number[] | null>(null); // photo ids, best match first
   const [dropped, setDropped] = useState<Set<number> | null>(null); // duplicates hidden; null = showing all
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState<Photo | null>(null);
 
   // Search results replace the grid (best match first); hidden duplicates are removed from either view.
   const byId = new Map(all.map((p) => [p.id, p]));
@@ -92,22 +94,13 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
   }
 
   async function remove(photo: Photo) {
-    if (!confirm("Delete this photo for everyone?")) return;
-    try {
-      await api(`/api/photos/${photo.id}`, { method: "DELETE" });
-      dialog.current?.close();
-      router.refresh();
-    } catch (e) {
-      alert((e as Error).message);
-    }
+    await api(`/api/photos/${photo.id}`, { method: "DELETE" });
+    dialog.current?.close();
+    router.refresh();
   }
 
   if (!all.length) {
-    return (
-      <Empty art={<EmptyGrid />} title="No photos yet">
-        Tap Add photos to start the roll. Everyone you invite can add theirs too.
-      </Empty>
-    );
+    return <EmptyAlbum />;
   }
 
   return (
@@ -214,18 +207,36 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
 
           <div className="flex justify-center gap-2 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
             {current ? (
-              <button onClick={() => save(current)} className="btn bg-accent text-on-accent">
+              <button onClick={() => save(current)} className="btn btn-primary">
                 <Download size={20} strokeWidth={1.75} /> Save
               </button>
             ) : null}
             {current?.can_delete ? (
-              <button onClick={() => remove(current)} className="btn border border-white/15 text-white" aria-label="Delete photo">
+              <button
+                onClick={() => {
+                  pauseVideos();
+                  setDeleting(current);
+                }}
+                className="btn border border-white/15 text-white"
+                aria-label={current.kind === "video" ? "Delete video" : "Delete photo"}
+                aria-haspopup="dialog"
+              >
                 <Trash2 size={20} strokeWidth={1.75} />
               </button>
             ) : null}
           </div>
         </div>
       </dialog>
+      {deleting ? (
+        <DeleteDialog
+          title={deleting.kind === "video" ? "Delete video?" : "Delete photo?"}
+          confirmLabel={deleting.kind === "video" ? "Delete video" : "Delete photo"}
+          onConfirm={() => remove(deleting)}
+          onClose={() => setDeleting(null)}
+        >
+          This {deleting.kind === "video" ? "video" : "photo"} will be permanently deleted from the album for everyone.
+        </DeleteDialog>
+      ) : null}
     </>
   );
 }

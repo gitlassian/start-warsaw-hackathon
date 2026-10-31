@@ -1,0 +1,74 @@
+.confirmation-dialog {
+  --danger: #c7353b;
+  --on-danger: #ffffff;
+  margin: auto;
+  width: calc(100% - 2rem);
+  max-width: 24rem;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sheet);
+  background: var(--bg);
+  color: var(--fg);
+  opacity: 0;
+  transform: translateY(0.5rem) scale(0.97);
+  transition:
+    opacity 0.2s,
+    transform 0.3s var(--ease-out-expo),
+    overlay 0.3s allow-discrete,
+    display 0.3s allow-discrete;
+}
+
+.confirmation-dialog[open] {
+  opacity: 1;
+  transform: none;
+}
+
+.confirmation-dialog::backdrop {
+  background: var(--scrim);
+  opacity: 0;
+  transition:
+    opacity 0.3s,
+    overlay 0.3s allow-discrete,
+    display 0.3s allow-discrete;
+}
+
+.confirmation-dialog[open]::backdrop {
+  opacity: 1;
+}
+
+.confirmation-danger {
+  color: var(--danger);
+}
+
+.confirmation-destructive {
+  --button-fill: var(--danger);
+  --button-ink: var(--on-danger);
+}
+
+@starting-style {
+  .confirmation-dialog[open] {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.97);
+  }
+
+  .confirmation-dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .confirmation-dialog {
+    --danger: #ff8589;
+    --on-danger: #0e1621;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirmation-dialog,
+  .confirmation-dialog::backdrop {
+    transition: none;
+  }
+}

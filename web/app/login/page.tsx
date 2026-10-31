@@ -14,7 +14,7 @@ type Teaser = { title: string; starts_at: string; ends_at: string; cover_url: st
 
 function Wordmark() {
   return (
-    <div className="flex h-14 items-center">
+    <div className="flex h-14 shrink-0 items-center">
       <img src="/logo.svg" alt="RollCall" className="h-8 dark:invert" />
     </div>
   );
@@ -30,7 +30,7 @@ async function Content({ searchParams }: PageProps<"/login">) {
   return (
     <>
       <Pile cover={event?.cover_url ?? null} label={event?.title ?? "Party photos"} />
-      <div className="pt-4">
+      <div className="shrink-0 pt-4">
         <h1 className="text-[40px] leading-[1.02] font-bold tracking-[-0.035em] text-balance">
           {event ? (
             n ? (
@@ -66,7 +66,7 @@ async function Content({ searchParams }: PageProps<"/login">) {
           )}
         </p>
       </div>
-      <div className="pt-6">
+      <div className="shrink-0 pt-6">
         <GoogleButton />
       </div>
     </>

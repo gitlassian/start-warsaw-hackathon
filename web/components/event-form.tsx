@@ -4,9 +4,11 @@ import { ImagePlus, X } from "@/components/icons";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { BottomBar } from "@/components/bars";
+import { DeleteDialog } from "@/components/delete-dialog";
 import { DateTimeField, nextHour } from "@/components/date-time-field";
 import { api, uploadCover } from "@/lib/client";
 import type { EventItem } from "@/lib/types";
+import "./cover-picker.css";
 
 const HOURS_3 = 3 * 3600000;
 
@@ -19,6 +21,7 @@ export function EventForm({ event }: { event?: EventItem }) {
   const [start, setStart] = useState<Date | null>(event ? new Date(event.starts_at) : null);
   const [end, setEnd] = useState<Date | null>(event ? new Date(event.ends_at) : null);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function onStart(value: Date) {
@@ -52,18 +55,11 @@ export function EventForm({ event }: { event?: EventItem }) {
     });
   }
 
-  function remove() {
-    if (!event || !confirm(`Delete “${event.title}” and all its photos for everyone? This can’t be undone.`)) return;
-    setError("");
-    startTransition(async () => {
-      try {
-        await api(`/api/events/${event.id}`, { method: "DELETE" });
-        router.replace("/");
-        router.refresh();
-      } catch (e) {
-        setError((e as Error).message);
-      }
-    });
+  async function remove() {
+    if (!event) return;
+    await api(`/api/events/${event.id}`, { method: "DELETE" });
+    router.replace("/");
+    router.refresh();
   }
 
   return (
@@ -76,18 +72,33 @@ export function EventForm({ event }: { event?: EventItem }) {
       className="flex flex-1 flex-col gap-5 px-4 pt-2"
     >
       <div className="relative">
-        <label className="relative flex aspect-[3/2] cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-card border border-line bg-surface text-muted">
+        <label className={`cover-picker${preview ? " cover-picker-filled" : ""}`}>
           {preview ? (
             <img src={preview} alt="Cover preview" className="absolute inset-0 size-full object-cover" />
           ) : (
-            <>
-              <ImagePlus size={28} strokeWidth={1.5} />
-              <span>Add cover photo</span>
-            </>
+            <span className="cover-picker-content">
+              <span className="cover-picker-art" aria-hidden>
+                <span className="cover-picker-poster">
+                  <img src="/invitations/party-time.webp" alt="" draggable={false} />
+                </span>
+                <span className="cover-picker-invitation">
+                  <img src="/invitations/birthday-balloons.webp" alt="" draggable={false} />
+                </span>
+                <span className="cover-picker-mini-poster">
+                  <img src="/invitations/love-party.webp" alt="" draggable={false} />
+                </span>
+              </span>
+              <span className="cover-picker-copy">
+                <span className="cover-picker-title">Add cover photo</span>
+                <span className="cover-picker-description">Pick a photo that sets the mood.</span>
+              </span>
+              <span className="cover-picker-action"><ImagePlus size={16} /> Choose photo</span>
+            </span>
           )}
           <input
             type="file"
             accept="image/*"
+            aria-label={preview ? "Change cover photo" : "Add cover photo"}
             className="sr-only"
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -137,7 +148,7 @@ export function EventForm({ event }: { event?: EventItem }) {
       </div>
 
       {event ? (
-        <button type="button" onClick={remove} disabled={pending} className="btn btn-secondary text-[#e5484d]">
+        <button type="button" onClick={() => setDeleting(true)} disabled={pending} className="btn btn-secondary text-[#e5484d]" aria-haspopup="dialog">
           Delete event
         </button>
       ) : null}
@@ -153,6 +164,11 @@ export function EventForm({ event }: { event?: EventItem }) {
           {pending ? (event ? "Saving…" : "Creating…") : event ? "Save changes" : "Create event"}
         </button>
       </BottomBar>
+      {event && deleting ? (
+        <DeleteDialog title="Delete event?" confirmLabel="Delete event" onConfirm={remove} onClose={() => setDeleting(false)}>
+          <span className="font-medium text-fg">“{event.title}”</span> and all its photos and videos will be permanently deleted for everyone.
+        </DeleteDialog>
+      ) : null}
     </form>
   );
 }

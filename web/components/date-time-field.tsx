@@ -176,14 +176,14 @@ export function DateTimeField({
         onClick={(e) => e.target === e.currentTarget && dialog.current?.close()}
       >
         <div className="mx-auto mb-2 h-1 w-9 rounded-full bg-line" aria-hidden />
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold">{label}</h2>
-            <p className="truncate text-muted">{draft ? `${day(draft, new Date())} · ${time(draft)}` : ""}</p>
+            <p className="text-muted">Scroll to choose the date and time, then tap Done.</p>
           </div>
           <button
             type="button"
-            className="-mr-2 h-11 rounded-full px-3 font-semibold text-accent active:bg-surface"
+            className="btn btn-secondary h-11 shrink-0 px-4"
             onClick={() => {
               if (draft) onChange(draft);
               dialog.current?.close();
