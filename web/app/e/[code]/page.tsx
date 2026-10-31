@@ -8,14 +8,19 @@ import { Invite } from "@/components/invite";
 import { LiveUpdates } from "@/components/live-updates";
 import { Uploader } from "@/components/uploader";
 import { When } from "@/components/when";
-import { apiGet } from "@/lib/server";
-import type { EventDetail } from "@/lib/types";
+import { apiGet, eventByCode } from "@/lib/server";
+import type { DuplicatesResult, EventDetail } from "@/lib/types";
 
-async function Content({ params }: PageProps<"/e/[id]">) {
-  const { id } = await params;
-  const event = await apiGet<EventDetail>(`/api/events/${id}`, `/e/${id}`);
-  const count = event.photos.length;
-  const version = `${count}:${Math.max(0, ...event.photos.map((p) => p.id))}`; // same shape as /api/events/{id}/version
+async function Content({ params }: PageProps<"/e/[code]">) {
+  const { code } = await params;
+  const { id } = await eventByCode(code);
+  const [event, duplicates] = await Promise.all([
+    apiGet<EventDetail>(`/api/events/${id}`, `/e/${code}`),
+    apiGet<DuplicatesResult>(`/api/events/${id}/duplicates`, `/e/${code}`),
+  ]);
+  const hidden = duplicates.groups.flatMap((g) => g.drop); // near-duplicates, tucked away by default
+  const count = event.photos.length - hidden.length;
+  const version = `${event.photos.length}:${Math.max(0, ...event.photos.map((p) => p.id))}`; // same shape as /api/events/{id}/version
 
   return (
     <>
@@ -24,7 +29,7 @@ async function Content({ params }: PageProps<"/e/[id]">) {
         right={
           <div className="flex gap-2">
             {event.is_owner ? (
-              <Link href={`/e/${event.id}/edit`} className="btn-icon" aria-label="Edit event">
+              <Link href={`/e/${event.code}/edit`} className="btn-icon" aria-label="Edit event">
                 <Pencil size={22} strokeWidth={1.75} />
               </Link>
             ) : null}
@@ -46,7 +51,7 @@ async function Content({ params }: PageProps<"/e/[id]">) {
         </h2>
       </div>
       <LiveUpdates eventId={event.id} version={version} />
-      <Album eventId={event.id} photos={event.photos} />
+      <Album eventId={event.id} photos={event.photos} hidden={hidden} />
       <BottomBar>
         <Uploader eventId={event.id} />
       </BottomBar>
@@ -55,7 +60,7 @@ async function Content({ params }: PageProps<"/e/[id]">) {
 }
 
 // Data streams in behind a skeleton so navigation is instant.
-export default function EventPage(props: PageProps<"/e/[id]">) {
+export default function EventPage(props: PageProps<"/e/[code]">) {
   return (
     <Suspense fallback={<Skeleton />}>
       <Content {...props} />

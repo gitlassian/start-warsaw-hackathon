@@ -1,4 +1,5 @@
 import io
+import zipfile
 from datetime import datetime
 
 import jwt
@@ -193,7 +194,7 @@ def test_duplicates_and_search(setup):
     found = guest.get(f"/api/events/{ev['id']}/search", params={"q": "red"}).json()["results"]
     assert [r["id"] for r in found][0] == sharp and blurry not in [r["id"] for r in found]
     everything = guest.get(f"/api/events/{ev['id']}/search", params={"q": "red", "all": True}).json()["results"]
-    assert {r["id"] for r in everything} == {sharp, blurry, blue, green}
+    assert {r["id"] for r in everything} == {sharp, blurry}  # both red; the blue and green ones don't match
     assert [r["id"] for r in guest.get(f"/api/events/{ev['id']}/search", params={"q": "blue", "k": 1}).json()["results"]] == [blue]
 
     assert stranger.get(f"/api/events/{ev['id']}/duplicates").status_code == 404
@@ -426,3 +427,49 @@ def test_signed_urls_are_stable_for_an_hour_then_renewed(setup, monkeypatch):
     assert main.get_url("u/1/stable.jpg", download=True) != first  # the download link is its own URL
     clock[0] += main.URL_REUSE + 1
     assert main.get_url("u/1/stable.jpg") != first  # renewed well before the 6 h expiry
+
+
+def test_download_zips_the_originals_without_duplicates(setup):
+    owner, guest, stranger = setup(1), setup(2), setup(3)
+    ev = owner.post("/api/events", json={**EVENT, "title": "Anna’s Birthday!"}).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    sharp = scene(1, tint=0)
+    blurry = scene(1, tint=0, blur=3)  # same scene on another phone: a duplicate
+    blue, green = scene(2, tint=2), scene(3, tint=1)
+    upload(guest, ev["id"], sharp)
+    upload(owner, ev["id"], blurry)
+    upload(guest, ev["id"], blue)
+    upload(owner, ev["id"], green)
+    url = f"/api/events/{ev['id']}/download"
+
+    res = guest.get(url)
+    assert res.status_code == 200 and res.headers["content-type"] == "application/zip"
+    assert res.headers["content-disposition"] == 'attachment; filename="anna-s-birthday.zip"'
+    with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
+        assert zf.testzip() is None
+        names = zf.namelist()
+        assert names == ["001-u2.jpg", "002-u2.jpg", "003-u1.jpg"]  # upload order, author in the name, no gap for the duplicate
+        assert sorted(zf.read(n) for n in names) == sorted([sharp, blue, green])  # the originals, byte for byte
+
+    everything = zipfile.ZipFile(io.BytesIO(guest.get(url, params={"all": True}).content))
+    assert len(everything.namelist()) == 4
+
+    assert stranger.get(url).status_code == 404
+    assert TestClient(main.app).get(url).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "scores, expected",
+    [
+        ([0.50, 0.48, 0.30, 0.10], [1, 2]),  # only what is close to the best match
+        ([0.26, 0.25, 0.24, 0.23, 0.21], [1, 2, 3, 4]),  # CLIP-sized scores: a spread of 0.04 is kept
+        ([0.215, 0.21, 0.20, 0.19], []),  # nothing reaches the floor: nothing matches
+    ],
+)
+def test_search_shows_only_what_matches(monkeypatch, scores, expected):
+    monkeypatch.setattr(photo_ai, "embedder", FakeEmbedder())
+    items = [
+        photo_ai.Item(i, "0" * 16, 1.0, 10**6, None, np.array([c, np.sqrt(1 - c**2), 0], dtype=np.float32).tobytes())
+        for i, c in enumerate(scores, 1)
+    ]
+    assert [i for i, _ in photo_ai.search_items(items, "red", 10, set())] == expected

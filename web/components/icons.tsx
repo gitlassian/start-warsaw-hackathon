@@ -28,6 +28,7 @@ const dot = (cx: number, cy: number, r = 1.15) => <circle key={`${cx},${cy}`} cx
 
 export const ChevronLeft = icon(<path d="M14.5 5.5 8 12l6.5 6.5" />);
 export const ChevronRight = icon(<path d="M9.5 5.5 16 12l-6.5 6.5" />);
+export const ArrowDown = icon(<path d="M12 5v14m-5.5-5.5L12 19l5.5-5.5" />);
 export const Plus = icon(<path d="M12 5v14M5 12h14" />);
 export const X = icon(<path d="m6.5 6.5 11 11m0-11-11 11" />);
 export const Check = icon(<path d="m5 12.5 4.5 4.5L19 7.5" />);

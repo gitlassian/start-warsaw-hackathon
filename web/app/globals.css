@@ -193,6 +193,28 @@
     }
   }
 
+  /* The join button breathes so it's obvious what to tap; the arrow above it nudges down. */
+  .join-cta {
+    animation: join-ring 2.2s ease-out infinite;
+  }
+  @keyframes join-ring {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 12px transparent;
+    }
+  }
+  .nudge {
+    animation: nudge 1.4s ease-in-out infinite;
+  }
+  @keyframes nudge {
+    50% {
+      transform: translateY(3px);
+    }
+  }
+
   /* A photo that arrives while the album is open settles into place. */
   .tile-in {
     animation: tile-in 0.5s var(--ease-out-expo) both;
@@ -349,7 +371,9 @@
   .print[data-tuck],
   .print > img,
   .film-strip,
-  .tile-in {
+  .tile-in,
+  .join-cta,
+  .nudge {
     transition: none;
     animation: none;
   }

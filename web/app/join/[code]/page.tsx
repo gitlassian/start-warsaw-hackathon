@@ -10,7 +10,7 @@ import type { EventItem } from "@/lib/types";
 async function Content({ params }: PageProps<"/join/[code]">) {
   const { code } = await params;
   const event = await apiGet<EventItem & { joined: boolean }>(`/api/codes/${code}`, `/join/${code}`);
-  if (event.joined) redirect(`/e/${event.id}`);
+  if (event.joined) redirect(`/e/${event.code}`);
 
   return (
     <>
@@ -19,11 +19,12 @@ async function Content({ params }: PageProps<"/join/[code]">) {
         {event.cover_url ? (
           <img src={event.cover_url} alt="" className="aspect-[3/2] w-full rounded-ui border border-line object-cover" />
         ) : null}
-        <h1 className="mt-5 text-[26px] leading-tight font-semibold tracking-tight text-balance">{event.title}</h1>
+        <p className="mt-5 text-sm font-medium text-accent">You’re invited</p>
+        <h1 className="mt-1 text-[26px] leading-tight font-semibold tracking-tight text-balance">{event.title}</h1>
         <p className="mt-1 text-muted">
           <When start={event.starts_at} end={event.ends_at} />
         </p>
-        <p className="mt-4 text-muted">You’ll be able to see the album and add your photos.</p>
+        <p className="mt-4 text-muted">Join to see everyone’s photos and add your own.</p>
       </div>
       <BottomBar>
         <JoinButton code={code} />

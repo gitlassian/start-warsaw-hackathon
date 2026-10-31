@@ -1,10 +1,12 @@
 import io
 import logging
 import os
+import re
 import secrets
 import threading
 import time
 import uuid
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -13,6 +15,7 @@ import jwt
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from PIL import Image, ImageOps
 from pydantic import AwareDatetime, BaseModel, Field
 import requests
@@ -558,6 +561,71 @@ def duplicates(event_id: int, user: User = Depends(current_user), s: Session = D
     member_event(event_id, user, s)
     groups = [{"keep": keep, "drop": drop} for keep, drop in duplicate_pairs(event_id, s)[1]]
     return {"groups": groups, "hidden": sum(len(g["drop"]) for g in groups)}
+
+
+class _Sink(io.RawIOBase):
+    """A write-only stream that hands back what was written, so a zip can be sent while it is still being built."""
+
+    def __init__(self):
+        self.chunks: list[bytes] = []
+        self.pos = 0
+
+    def writable(self):
+        return True
+
+    def write(self, b):
+        data = bytes(b)
+        self.chunks.append(data)
+        self.pos += len(data)
+        return len(data)
+
+    def tell(self):
+        return self.pos
+
+    def drain(self) -> bytes:
+        out, self.chunks = self.chunks, []
+        return b"".join(out)
+
+
+def _slug(text: str, fallback: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or fallback
+
+
+@api.get("/events/{event_id}/download")
+def download_album(
+    event_id: int, all: bool = False, user: User = Depends(current_user), s: Session = Depends(db)
+):
+    """The originals of the event as one zip. Duplicates are left out unless `all` is set."""
+    event = member_event(event_id, user, s)
+    skip = set() if all else {d for _, drop in duplicate_pairs(event_id, s)[1] for d in drop}
+    rows = s.execute(
+        select(Photo, User.name).join(User, User.id == Photo.user_id)
+        .where(Photo.event_id == event_id).order_by(Photo.created_at, Photo.id)
+    ).all()
+    files = [
+        (p.key, f"{n:03d}-{_slug(author, 'guest')}{os.path.splitext(p.key)[1]}", p.created_at)
+        for n, (p, author) in enumerate((r for r in rows if r[0].id not in skip), 1)
+    ]
+
+    def stream():
+        sink = _Sink()
+        with zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED) as zf:  # photos are compressed already
+            for key, name, taken in files:
+                try:
+                    body = s3.get_object(Bucket=S3_BUCKET, Key=key)["Body"]
+                except ClientError:
+                    log.warning("Skipping missing object %s in the download", key)
+                    continue
+                info = zipfile.ZipInfo(name, date_time=max(taken.timetuple()[:6], (1980, 1, 1, 0, 0, 0)))
+                with zf.open(info, "w", force_zip64=True) as dest:
+                    while chunk := body.read(1 << 20):
+                        dest.write(chunk)
+                        yield sink.drain()
+                yield sink.drain()
+        yield sink.drain()
+
+    filename = f"{_slug(event.title, 'rollcall')}.zip"
+    return StreamingResponse(stream(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @api.get("/events/{event_id}/search")
