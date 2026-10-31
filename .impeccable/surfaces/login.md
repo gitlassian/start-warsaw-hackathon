@@ -6,7 +6,7 @@ Mode: Persuade. Primary visitor: a guest who just scanned the host's QR (`/login
 
 THESIS: The login is the party table after everyone's dumped their prints on it: a pile you want to add to. Refuses the category default of logo + tagline + centred sign-in button.
 
-OWN-WORLD: The app's monochrome world as a tabletop: `--surface` gray ground, white prints with an even border (no captions) and soft offset shadows, tossed at angles. Photos (the event cover plus stock party prints) are the only colour on screen. System sans, heavy tight display line; our own primary pill "Continue with Google" (no Google iframe).
+OWN-WORLD: The app's monochrome world as a tabletop: `--surface` gray ground with two faint strips of 35mm film drifting under the pile in opposite directions (fade out behind the copy), white prints with an even border (no captions) and soft offset shadows, tossed at angles. Photos (the event cover plus stock party prints) are the only colour on screen. System sans, heavy tight display line; our own primary pill "Continue with Google" (no Google iframe).
 
 STORY: "Something is happening, people are already in it, my photos belong there." Guest sees the real event (cover, title, date, real photo count), then signs in with one tap and lands on the join screen.
 

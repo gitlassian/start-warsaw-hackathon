@@ -4,6 +4,12 @@ import { Pile } from "@/components/pile";
 import { When } from "@/components/when";
 import { apiPublic } from "@/lib/server";
 
+// Film strips behind the pile: two lanes crossing the table, running opposite ways.
+const FILM = [
+  { top: "13%", tilt: "-9deg", speed: "18s", dir: "normal" },
+  { top: "44%", tilt: "-9deg", speed: "24s", dir: "reverse" },
+];
+
 type Teaser = { title: string; starts_at: string; ends_at: string; cover_url: string | null; photos: number; people: number };
 
 function Wordmark() {
@@ -29,22 +35,22 @@ async function Content({ searchParams }: PageProps<"/login">) {
           {event ? (
             n ? (
               <>
-                <span className="tabular-nums">{n.toLocaleString("en")}</span> {n === 1 ? "photo" : "photos"} on the pile.
+                <span className="tabular-nums">{n.toLocaleString("en")}</span> {n === 1 ? "photo" : "photos"} already here.
                 <br />
-                Throw yours on.
+                Add yours.
               </>
             ) : (
               <>
-                The pile is empty.
+                No photos yet.
                 <br />
-                Throw the first one on.
+                Be the first to add one.
               </>
             )
           ) : (
             <>
-              Everyone’s photos.
+              One shared photo album
               <br />
-              One pile.
+              for your event
             </>
           )}
         </h1>
@@ -56,7 +62,7 @@ async function Content({ searchParams }: PageProps<"/login">) {
               {event.people === 1 ? "person" : "people"} in
             </>
           ) : (
-            "Make an event, share the code, and every guest’s shots land in one album."
+            "Create an event and show guests the QR code. Everyone adds their photos, and everyone can see and save them all."
           )}
         </p>
       </div>
@@ -72,6 +78,13 @@ export default function Login(props: PageProps<"/login">) {
     <div className="flex flex-1 flex-col px-5 pt-[env(safe-area-inset-top)] pb-[max(1.25rem,env(safe-area-inset-bottom))]">
       {/* The table the prints land on, edge to edge even on wide screens. */}
       <div className="fixed inset-0 -z-10 bg-surface" aria-hidden />
+      <div className="film fixed inset-0 -z-10" aria-hidden>
+        {FILM.map((lane) => (
+          <div key={lane.top} className="film-lane" style={{ top: lane.top, "--tilt": lane.tilt } as React.CSSProperties}>
+            <div className="film-strip" style={{ "--speed": lane.speed, "--dir": lane.dir } as React.CSSProperties} />
+          </div>
+        ))}
+      </div>
       <Wordmark />
       <Suspense fallback={<div className="flex-1" />}>
         <Content {...props} />

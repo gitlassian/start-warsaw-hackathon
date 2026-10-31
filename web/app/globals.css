@@ -177,6 +177,33 @@
     }
   }
 
+  /* Login table: strips of 35mm film (the "roll") drifting under the pile, in ink so they follow the theme. */
+  .film {
+    overflow: hidden;
+    pointer-events: none;
+    mask-image: linear-gradient(to bottom, #000 52%, transparent 80%); /* copy sits on clean ground */
+  }
+  .film-lane {
+    position: absolute;
+    left: -50%;
+    width: 200%;
+    transform: rotate(var(--tilt));
+  }
+  .film-strip {
+    width: calc(100% + 480px);
+    height: 104px;
+    background: var(--fg);
+    opacity: 0.08;
+    mask: url("/film-strip.svg") 0 0 / 480px 104px repeat-x;
+    animation: film-advance var(--speed) linear infinite var(--dir, normal);
+  }
+  /* One tile per loop, so the jump back is invisible. */
+  @keyframes film-advance {
+    to {
+      transform: translateX(-480px);
+    }
+  }
+
   /* Login pile: a print sits in its slot via --x/--y/--r and glides to a new slot on shuffle. */
   .print {
     --at: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) rotate(var(--r));
@@ -266,7 +293,8 @@
   .sheet::backdrop,
   .print,
   .print[data-tuck],
-  .print > img {
+  .print > img,
+  .film-strip {
     transition: none;
     animation: none;
   }
