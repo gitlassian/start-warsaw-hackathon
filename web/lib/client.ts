@@ -37,8 +37,42 @@ async function putAll(blobs: Blob[]): Promise<string[]> {
   return targets.map((t) => t.key);
 }
 
+const VIDEO_TYPES: Record<string, string> = { mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm" };
+const isVideo = (file: File) => file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name);
+
 // Some pickers hand over files with no type (e.g. HEIC on desktop).
-const typed = (file: File): Blob => (file.type ? file : new Blob([file], { type: "image/jpeg" }));
+const typed = (file: File): Blob =>
+  file.type
+    ? file
+    : new Blob([file], { type: VIDEO_TYPES[file.name.split(".").pop()?.toLowerCase() ?? ""] ?? "image/jpeg" });
+
+/** A frame from the start of the video as a thumbnail; fails when the browser can't decode it (e.g. HEVC in Chrome). */
+async function videoPoster(file: Blob, max: number): Promise<Blob> {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.src = url;
+  try {
+    await new Promise<void>((ok, fail) => {
+      const timer = setTimeout(() => fail(new Error("Timed out reading the video")), 8000);
+      video.onloadeddata = () => (video.currentTime = Math.min(0.5, (video.duration || 1) / 2));
+      video.onseeked = () => (clearTimeout(timer), ok());
+      video.onerror = () => (clearTimeout(timer), fail(new Error("Could not decode the video")));
+    });
+    const scale = Math.min(1, max / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext("2d")!.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", 0.82));
+    if (!blob) throw new Error("Could not process video");
+    return blob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 export async function uploadCover(file: File): Promise<string> {
   const [key] = await putAll([await resize(file, 1600).catch(() => typed(file))]);
@@ -46,7 +80,8 @@ export async function uploadCover(file: File): Promise<string> {
 }
 
 export async function uploadPhoto(eventId: number, file: File) {
-  const thumb = await resize(file, 600).catch(() => null); // undecodable here (HEIC on Chrome): grid shows the original
+  // undecodable here (HEIC or HEVC on Chrome): the server makes the thumbnail, or the grid shows a placeholder
+  const thumb = await (isVideo(file) ? videoPoster(file, 600) : resize(file, 600)).catch(() => null);
   const [key, thumbKey = key] = await putAll(thumb ? [typed(file), thumb] : [typed(file)]);
   return api(`/api/events/${eventId}/photos`, { body: { key, thumb_key: thumbKey } });
 }

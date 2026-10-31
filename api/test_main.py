@@ -57,13 +57,16 @@ class FakeS3:
         return f"{main.S3_ENDPOINT}/{Params['Bucket']}/{Params['Key']}?sig"
 
     def head_object(self, Bucket, Key):
-        return {"ContentLength": 10}
+        return {"ContentLength": len(self.objects[Key]) if Key in self.objects else 10}
 
     def get_object(self, Bucket, Key, Range=None):
         data = self.objects.get(Key) or scene(hash(Key) % 1000, 0)
         if Range:
             data = data[: int(Range.split("-")[1]) + 1]
         return {"Body": io.BytesIO(data)}
+
+    def put_object(self, Bucket, Key, Body, ContentType=None):
+        self.objects[Key] = Body
 
     def delete_object(self, Bucket, Key):
         self.deleted.append(Key)
@@ -244,3 +247,104 @@ def test_google_login_checks_audience(setup, monkeypatch):
     res = client.post("/api/auth/google", json={"access_token": "t"})
     assert res.status_code == 200 and res.json()["email"] == "new@x.com"
     assert client.get("/api/me").json()["name"] == "New"  # session cookie was set
+
+
+def heic(seed: int) -> bytes:
+    out = io.BytesIO()
+    Image.open(io.BytesIO(scene(seed, tint=0))).save(out, "HEIF", quality=80)
+    return out.getvalue()
+
+
+def test_heic_gets_jpeg_previews(setup):
+    try:
+        original = heic(1)
+    except Exception:
+        pytest.skip("this libheif build cannot encode HEIC")
+    owner = setup(1)
+    ev = owner.post("/api/events", json=EVENT).json()
+    key = owner.post("/api/uploads", json={"types": ["image/heic"]}).json()[0]["key"]
+    main.s3.objects[key] = original  # the browser couldn't thumbnail it, so thumb_key == key
+    photo = owner.post(f"/api/events/{ev['id']}/photos", json={"key": key, "thumb_key": key}).json()
+
+    assert photo["thumb_url"].split("?")[0].endswith(f"{key}.thumb.jpg")
+    assert photo["url"].split("?")[0].endswith(f"{key}.view.jpg")
+    assert photo["download_url"].split("?")[0].endswith(key)  # saving still hands out the original
+    for copy in (f"{key}.thumb.jpg", f"{key}.view.jpg"):
+        assert main.s3.objects[copy][:3] == b"\xff\xd8\xff"  # JPEG
+
+    assert owner.get(f"/api/events/{ev['id']}/duplicates").json()["groups"] == []  # analysed from the JPEG thumbnail
+    assert owner.delete(f"/api/photos/{photo['id']}").status_code == 200
+    assert {key, f"{key}.thumb.jpg", f"{key}.view.jpg"} <= set(main.s3.deleted)
+
+
+def test_unreadable_heic_is_rejected_and_removed(setup):
+    owner = setup(1)
+    ev = owner.post("/api/events", json=EVENT).json()
+    key = owner.post("/api/uploads", json={"types": ["image/heic"]}).json()[0]["key"]
+    main.s3.objects[key] = b"not really a heic"
+    res = owner.post(f"/api/events/{ev['id']}/photos", json={"key": key, "thumb_key": key})
+    assert res.status_code == 400 and key in main.s3.deleted
+    assert owner.get(f"/api/events/{ev['id']}").json()["photos"] == []
+
+
+def test_event_list_previews_cover_or_latest_photo(setup):
+    owner = setup(1)
+    empty = owner.post("/api/events", json=EVENT).json()
+    assert empty["preview_url"] is None
+
+    ev = owner.post("/api/events", json={**EVENT, "title": "Second"}).json()
+    first = upload(owner, ev["id"], scene(1, tint=0))
+    last = upload(owner, ev["id"], scene(2, tint=1))
+    assert last > first
+    listed = {e["id"]: e for e in owner.get("/api/events").json()}
+    newest_thumb = owner.get(f"/api/events/{ev['id']}").json()["photos"][0]["thumb_url"]  # newest first
+    assert listed[ev["id"]]["preview_url"] == newest_thumb
+    assert listed[empty["id"]]["preview_url"] is None
+
+    cover = owner.post("/api/uploads", json={"types": ["image/jpeg"]}).json()[0]["key"]
+    with_cover = owner.post("/api/events", json={**EVENT, "title": "Third", "cover_key": cover}).json()
+    assert with_cover["preview_url"] == with_cover["cover_url"]
+
+
+def test_videos_upload_with_poster_and_stay_out_of_duplicates(setup):
+    owner = setup(1)
+    ev = owner.post("/api/events", json=EVENT).json()
+    types = owner.post("/api/uploads", json={"types": ["video/mp4", "image/jpeg"]}).json()
+    assert types[0]["key"].endswith(".mp4")
+    assert owner.post("/api/uploads", json={"types": ["video/x-flv"]}).status_code == 400
+    main.s3.objects[types[0]["key"]] = b"fake mp4 bytes"
+    main.s3.objects[types[1]["key"]] = scene(1, tint=0)
+    video = owner.post(f"/api/events/{ev['id']}/photos", json={"key": types[0]["key"], "thumb_key": types[1]["key"]}).json()
+    assert video["kind"] == "video" and video["thumb_url"] and video["url"].split("?")[0].endswith(".mp4")
+
+    # a still of the same scene next to it: only the photo list is deduplicated, the video is never dropped
+    twin = upload(owner, ev["id"], scene(1, tint=0))
+    assert owner.get(f"/api/events/{ev['id']}/duplicates").json()["groups"] == []
+    # but its poster frame makes it findable
+    found = owner.get(f"/api/events/{ev['id']}/search", params={"q": "red", "all": True}).json()["results"]
+    assert {r["id"] for r in found} == {video["id"], twin}
+    album = owner.get(f"/api/events/{ev['id']}").json()["photos"]
+    assert sorted(p["kind"] for p in album) == ["image", "video"]
+
+
+def test_video_without_poster_has_no_thumbnail_and_is_not_analysed(setup):
+    owner = setup(1)
+    ev = owner.post("/api/events", json=EVENT).json()
+    key = owner.post("/api/uploads", json={"types": ["video/quicktime"]}).json()[0]["key"]
+    main.s3.objects[key] = b"fake mov bytes"
+    video = owner.post(f"/api/events/{ev['id']}/photos", json={"key": key, "thumb_key": key}).json()
+    assert video["kind"] == "video" and video["thumb_url"] is None
+    assert owner.get(f"/api/events/{ev['id']}/search", params={"q": "red", "all": True}).json()["results"] == []
+
+
+def test_videos_may_be_larger_than_photos(setup, monkeypatch):
+    monkeypatch.setattr(main, "MAX_PHOTO_BYTES", 5)
+    monkeypatch.setattr(main, "MAX_VIDEO_BYTES", 50)
+    owner = setup(1)
+    ev = owner.post("/api/events", json=EVENT).json()
+    photo_key = owner.post("/api/uploads", json={"types": ["image/jpeg"]}).json()[0]["key"]
+    video_key = owner.post("/api/uploads", json={"types": ["video/mp4"]}).json()[0]["key"]
+    main.s3.objects[photo_key] = main.s3.objects[video_key] = b"x" * 20
+    too_big = owner.post(f"/api/events/{ev['id']}/photos", json={"key": photo_key, "thumb_key": photo_key})
+    assert too_big.status_code == 413 and photo_key in main.s3.deleted
+    assert owner.post(f"/api/events/{ev['id']}/photos", json={"key": video_key, "thumb_key": video_key}).status_code == 200

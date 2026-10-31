@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 // RollCall's own icon set: 24px grid, round caps and joins, soft corners; solid dots echo the iris logo.
 type Props = { size?: number; strokeWidth?: number; className?: string };
 
@@ -92,3 +94,90 @@ export const QrCode = icon(
     {[dot(7, 7), dot(17, 7), dot(7, 17), dot(14.75, 14.75), dot(19.25, 14.75), dot(17, 17), dot(14.75, 19.25), dot(19.25, 19.25)]}
   </>,
 );
+
+// A camera body with its lens.
+export const Camera = icon(
+  <>
+    <rect x="3.5" y="7" width="17" height="12.5" rx="3" />
+    <path d="m8.5 7 .9-1.6a1.5 1.5 0 0 1 1.3-.8h2.6a1.5 1.5 0 0 1 1.3.8L15.5 7" />
+    <circle cx="12" cy="13.2" r="3.4" />
+  </>,
+);
+
+// Two arrows chasing each other around a lens.
+export const SwitchCamera = icon(
+  <>
+    <path d="M4.8 10A7.5 7.5 0 0 1 18.4 7.4M19 4.2v3.4h-3.4" />
+    <path d="M19.2 14A7.5 7.5 0 0 1 5.6 16.6M5 19.8v-3.4h3.4" />
+    <circle cx="12" cy="12" r="2.2" />
+  </>,
+);
+
+// A film frame: sprocket rails either side.
+export const Film = icon(
+  <>
+    <rect x="4" y="4.5" width="16" height="15" rx="3" />
+    <path d="M8.5 4.5v15M15.5 4.5v15M4 9.5h4.5M4 14.5h4.5M15.5 9.5H20M15.5 14.5H20" />
+  </>,
+);
+
+// A solid, softly rounded play triangle.
+export const Play = icon(
+  <path
+    d="M8.6 6.4v11.2a.9.9 0 0 0 1.4.8l8.6-5.6a.9.9 0 0 0 0-1.5L10 5.6a.9.9 0 0 0-1.4.8z"
+    fill="currentColor"
+  />,
+);
+
+/**
+ * Two chain links interlocked along the diagonal. Each link is cut open where the other passes over it,
+ * so it reads as a chain on any background.
+ */
+export function JoinIcon({ size = 24, strokeWidth = 1.75, className }: Props) {
+  const id = useId();
+  const gap = strokeWidth + 2.2; // width of the cut around the link that passes over
+  const link = { x: 1.5, y: 9, width: 12, height: 6, rx: 3 };
+  const other = { ...link, x: 10.5 };
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <g transform="rotate(-45 12 12)">
+        <defs>
+          {/* Upper half: the right link passes over the left one. */}
+          <clipPath id={`${id}-top`}>
+            <rect x="-12" y="-12" width="48" height="24" />
+          </clipPath>
+          <mask id={`${id}-left`} maskUnits="userSpaceOnUse" x="-12" y="-12" width="48" height="48">
+            <rect x="-12" y="-12" width="48" height="48" fill="#fff" stroke="none" />
+            <g clipPath={`url(#${id}-top)`}>
+              <rect {...other} stroke="#000" strokeWidth={gap} />
+            </g>
+          </mask>
+          {/* Lower half: the left link passes over the right one. */}
+          <clipPath id={`${id}-bottom`}>
+            <rect x="-12" y="12" width="48" height="24" />
+          </clipPath>
+          <mask id={`${id}-right`} maskUnits="userSpaceOnUse" x="-12" y="-12" width="48" height="48">
+            <rect x="-12" y="-12" width="48" height="48" fill="#fff" stroke="none" />
+            <g clipPath={`url(#${id}-bottom)`}>
+              <rect {...link} stroke="#000" strokeWidth={gap} />
+            </g>
+          </mask>
+        </defs>
+        <rect {...link} mask={`url(#${id}-left)`} />
+        <rect {...other} mask={`url(#${id}-right)`} />
+      </g>
+    </svg>
+  );
+}

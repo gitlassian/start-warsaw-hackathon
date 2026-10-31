@@ -1,9 +1,9 @@
 "use client";
 
-import { Download, Search, Trash2, X } from "@/components/icons";
+import { Download, Film, Play, Search, Trash2, X } from "@/components/icons";
 import { Empty, EmptyGrid } from "@/components/empty";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import type { DuplicatesResult, Photo, SearchResult } from "@/lib/types";
 
@@ -11,7 +11,7 @@ async function save(photo: Photo) {
   // On phones the share sheet's "Save Image" puts it in the camera roll; a download would land in Files.
   if (matchMedia("(pointer: coarse)").matches && navigator.canShare) {
     try {
-      const blob = await (await fetch(photo.url)).blob();
+      const blob = await (await fetch(photo.download_url)).blob(); // the original, not the viewer copy
       const file = new File([blob], photo.url.split("?")[0].split("/").pop()!, { type: blob.type });
       if (navigator.canShare({ files: [file] })) return await navigator.share({ files: [file] });
     } catch (e) {
@@ -36,6 +36,10 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
   const base = hits ? hits.flatMap((id) => byId.get(id) ?? []) : all;
   const photos = dropped ? base.filter((p) => !dropped.has(p.id)) : base;
   const current = photos[index];
+
+  // Only the video on screen may play.
+  const pauseVideos = () => strip.current?.querySelectorAll("video").forEach((v) => v.pause());
+  useEffect(pauseVideos, [index]);
 
   async function runSearch(q: string, hideDuplicates: boolean) {
     if (!q) return setHits(null);
@@ -146,23 +150,30 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
 
       {!photos.length ? <p className="px-4 py-16 text-center text-muted">No matching photos.</p> : null}
 
-      <ul className="grid grid-cols-3 gap-0.5">
+      <ul className="grid grid-cols-3 gap-1 px-4">
         {photos.map((p, i) => (
           <li key={p.id}>
-            <button onClick={() => open(i)} className="block aspect-square w-full overflow-hidden bg-surface">
-              <img
-                src={p.thumb_url}
-                alt={`Photo by ${p.author}`}
-                loading="lazy"
-                decoding="async"
-                className="size-full object-cover"
-              />
+            <button
+              onClick={() => open(i)}
+              className="relative block aspect-square w-full overflow-hidden rounded-thumb bg-surface"
+              aria-label={`${p.kind === "video" ? "Video" : "Photo"} by ${p.author}`}
+            >
+              {p.thumb_url ? (
+                <img src={p.thumb_url} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
+              ) : (
+                <Film size={24} strokeWidth={1.5} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-faint" />
+              )}
+              {p.kind === "video" ? (
+                <span className="absolute bottom-1.5 left-1.5 flex size-6 items-center justify-center rounded-full bg-black/55 text-white">
+                  <Play size={12} />
+                </span>
+              ) : null}
             </button>
           </li>
         ))}
       </ul>
 
-      <dialog ref={dialog} className="viewer" aria-label="Photo viewer">
+      <dialog ref={dialog} className="viewer" aria-label="Photo viewer" onClose={pauseVideos}>
         <div className="flex h-full flex-col">
           <div className="flex items-center gap-2 px-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
             <button onClick={() => dialog.current?.close()} className="btn-icon border-white/15 active:bg-white/10" aria-label="Close">
@@ -184,7 +195,19 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
           >
             {photos.map((p) => (
               <div key={p.id} className="flex w-full shrink-0 snap-center items-center justify-center">
-                <img src={p.url} alt={`Photo by ${p.author}`} loading="lazy" className="max-h-full max-w-full object-contain" />
+                {p.kind === "video" ? (
+                  <video
+                    src={p.url}
+                    poster={p.thumb_url ?? undefined}
+                    controls
+                    playsInline
+                    preload="none"
+                    aria-label={`Video by ${p.author}`}
+                    className="max-h-full w-full object-contain"
+                  />
+                ) : (
+                  <img src={p.url} alt={`Photo by ${p.author}`} loading="lazy" className="max-h-full max-w-full object-contain" />
+                )}
               </div>
             ))}
           </div>

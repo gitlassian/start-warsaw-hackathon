@@ -5,6 +5,7 @@ const API_URL = process.env.API_URL ?? "http://localhost:8000";
 const S3_URL = process.env.S3_URL ?? "http://localhost:9000";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   cacheComponents: true,
   partialPrefetching: true,
   // Let phones on the same network open the dev server (incl. HMR) via this machine's LAN IP.
@@ -12,9 +13,9 @@ const nextConfig: NextConfig = {
     .flat()
     .flatMap((i) => (i?.family === "IPv4" ? [i.address] : [])),
   experimental: {
-    // Rewrites buffer bodies (10MB default); photo uploads go through /s3. Matches the API's 50MB cap.
+    // Rewrites buffer bodies (10MB default); uploads go through /s3. Covers the API's caps (50MB photos, 200MB videos).
     // shortcut: buffers in memory; at scale set S3_PUBLIC_URL to the bucket itself so uploads skip Next.
-    proxyClientMaxBodySize: "55mb",
+    proxyClientMaxBodySize: "205mb",
   },
   turbopack: {
     rules: {

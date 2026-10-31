@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 import secrets
@@ -11,6 +12,7 @@ import jwt
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response
+from PIL import Image, ImageOps
 from pydantic import AwareDatetime, BaseModel, Field
 import requests
 from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, LargeBinary, String, Text, create_engine, func, select
@@ -31,14 +33,18 @@ S3_PUBLIC_URL = env("S3_PUBLIC_URL", "/s3")
 S3_BUCKET = env("S3_BUCKET", "rollcall")
 URL_TTL = 6 * 3600
 MAX_PHOTO_BYTES = 50 * 1024 * 1024
+MAX_VIDEO_BYTES = 200 * 1024 * 1024
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I: codes get typed by hand
-IMAGE_TYPES = {
+MEDIA_TYPES = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
     "image/webp": ".webp",
     "image/gif": ".gif",
     "image/heic": ".heic",
     "image/heif": ".heif",
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "video/webm": ".webm",
 }
 
 if COOKIE_SECURE and JWT_SECRET == "dev-only-secret-change-me-in-production":
@@ -160,6 +166,19 @@ def get_url(key: str, download: bool = False) -> str:
     return public(s3.generate_presigned_url("get_object", Params=params, ExpiresIn=URL_TTL))
 
 
+def is_heif(key: str) -> bool:
+    return key.lower().endswith((".heic", ".heif"))
+
+
+def is_video(key: str) -> bool:
+    return key.lower().endswith((".mp4", ".mov", ".webm"))
+
+
+def view_key(key: str) -> str:
+    """What the viewer shows. Only Safari decodes HEIC, so those get a JPEG copy next to the original."""
+    return f"{key}.view.jpg" if is_heif(key) else key
+
+
 def check_upload(key: str, user: User) -> int:
     """Key must be one this user was handed by /uploads and must actually exist in S3."""
     if not key.startswith(f"u/{user.id}/"):
@@ -174,7 +193,8 @@ def user_out(u: User):
     return {"id": u.id, "name": u.name, "email": u.email, "picture": u.picture}
 
 
-def event_out(e: Event, user: User):
+def event_out(e: Event, user: User, latest_thumb: str | None = None):
+    preview = e.cover_key or latest_thumb
     return {
         "id": e.id,
         "title": e.title,
@@ -183,6 +203,7 @@ def event_out(e: Event, user: User):
         "ends_at": e.ends_at.isoformat(),
         "code": e.code,
         "cover_url": get_url(e.cover_key) if e.cover_key else None,
+        "preview_url": get_url(preview) if preview else None,  # the cover, else the newest photo
         "is_owner": e.owner_id == user.id,
     }
 
@@ -190,8 +211,10 @@ def event_out(e: Event, user: User):
 def photo_out(p: Photo, author: User, user: User, event: Event):
     return {
         "id": p.id,
-        "url": get_url(p.key),
-        "thumb_url": get_url(p.thumb_key),
+        "kind": "video" if is_video(p.key) else "image",
+        "url": get_url(view_key(p.key)),
+        # a video the browser couldn't take a poster frame from has no thumbnail (thumb_key is the video itself)
+        "thumb_url": None if p.thumb_key == p.key and is_video(p.key) else get_url(p.thumb_key),
         "download_url": get_url(p.key, download=True),
         "author": author.name,
         "can_delete": p.user_id == user.id or event.owner_id == user.id,
@@ -276,9 +299,9 @@ class UploadIn(BaseModel):
 def create_uploads(body: UploadIn, user: User = Depends(current_user)):
     out = []
     for t in body.types:
-        if t not in IMAGE_TYPES:
-            raise HTTPException(400, "Only images can be uploaded")
-        key = f"u/{user.id}/{uuid.uuid4().hex}{IMAGE_TYPES[t]}"
+        if t not in MEDIA_TYPES:
+            raise HTTPException(400, "Only photos and videos can be uploaded")
+        key = f"u/{user.id}/{uuid.uuid4().hex}{MEDIA_TYPES[t]}"
         url = s3.generate_presigned_url(
             "put_object", Params={"Bucket": S3_BUCKET, "Key": key, "ContentType": t}, ExpiresIn=900
         )
@@ -298,8 +321,12 @@ class EventIn(BaseModel):
 def list_events(user: User = Depends(current_user), s: Session = Depends(db)):
     events = s.scalars(
         select(Event).join(Member).where(Member.user_id == user.id).order_by(Event.starts_at.desc())
-    )
-    return [event_out(e, user) for e in events]
+    ).all()
+    latest: dict[int, str] = {}
+    newest_first = select(Photo.event_id, Photo.thumb_key).where(Photo.event_id.in_([e.id for e in events]))
+    for event_id, thumb_key in s.execute(newest_first.order_by(Photo.created_at.desc(), Photo.id.desc())):
+        latest.setdefault(event_id, thumb_key)
+    return [event_out(e, user, latest.get(e.id)) for e in events]
 
 
 @api.post("/events")
@@ -345,18 +372,41 @@ class PhotoIn(BaseModel):
     thumb_key: str
 
 
+def make_previews(key: str) -> str:
+    """JPEG thumbnail and viewer copy of a HEIC original; returns the thumbnail's key."""
+    with Image.open(io.BytesIO(_read(key))) as raw:
+        img = ImageOps.exif_transpose(raw).convert("RGB")
+    for name, side, quality in (("thumb", 600, 82), ("view", 2000, 88)):
+        copy = img.copy()
+        copy.thumbnail((side, side))
+        out = io.BytesIO()
+        copy.save(out, "JPEG", quality=quality)
+        s3.put_object(Bucket=S3_BUCKET, Key=f"{key}.{name}.jpg", Body=out.getvalue(), ContentType="image/jpeg")
+    return f"{key}.thumb.jpg"
+
+
 @api.post("/events/{event_id}/photos")
 def add_photo(
     event_id: int, body: PhotoIn, background: BackgroundTasks, user: User = Depends(current_user), s: Session = Depends(db)
 ):
     e = member_event(event_id, user, s)
     # shortcut: presigned PUT can't cap size, so oversized originals are rejected here after upload.
-    if check_upload(body.key, user) > MAX_PHOTO_BYTES:
+    limit = MAX_VIDEO_BYTES if is_video(body.key) else MAX_PHOTO_BYTES
+    if check_upload(body.key, user) > limit:
         s3.delete_object(Bucket=S3_BUCKET, Key=body.key)
-        raise HTTPException(413, "Photo is larger than 50 MB")
+        raise HTTPException(413, f"File is larger than {limit // 2**20} MB")
     if body.thumb_key != body.key:
         check_upload(body.thumb_key, user)
-    p = Photo(event_id=e.id, user_id=user.id, key=body.key, thumb_key=body.thumb_key)
+    thumb_key = body.thumb_key
+    if is_heif(body.key):
+        try:
+            made = make_previews(body.key)
+        except Exception:
+            s3.delete_object(Bucket=S3_BUCKET, Key=body.key)
+            raise HTTPException(400, "This photo couldn't be read")
+        if thumb_key == body.key:  # the browser couldn't make a thumbnail either
+            thumb_key = made
+    p = Photo(event_id=e.id, user_id=user.id, key=body.key, thumb_key=thumb_key)
     s.add(p)
     s.commit()
     background.add_task(analyze_event, e.id)
@@ -371,7 +421,7 @@ def delete_photo(photo_id: int, user: User = Depends(current_user), s: Session =
     e = member_event(p.event_id, user, s)
     if p.user_id != user.id and e.owner_id != user.id:
         raise HTTPException(403, "You can only delete your own photos")
-    for key in {p.key, p.thumb_key}:
+    for key in {p.key, p.thumb_key, view_key(p.key)}:
         s3.delete_object(Bucket=S3_BUCKET, Key=key)
     s.delete(p)
     s.commit()
@@ -398,9 +448,16 @@ def analyze_event(event_id: int) -> None:
             .where(Photo.event_id == event_id, PhotoFeature.photo_id.is_(None))
         ).all()
         for p in missing:
+            if is_video(p.key) and p.thumb_key == p.key:
+                continue  # no poster frame to look at
             try:
                 thumb = _read(p.thumb_key)
-                head = thumb[:HEAD_BYTES] if p.thumb_key == p.key else _read(p.key, f"bytes=0-{HEAD_BYTES - 1}")
+                if p.thumb_key == p.key:
+                    head = thumb[:HEAD_BYTES]
+                elif is_heif(p.key):
+                    head = _read(p.key)
+                else:
+                    head = _read(p.key, f"bytes=0-{HEAD_BYTES - 1}")
                 a = photo_ai.analyze(thumb, head)
             except Exception:  # one unreadable file must not take the whole album down
                 log.exception("Could not analyze photo %s", p.id)
@@ -411,23 +468,30 @@ def analyze_event(event_id: int) -> None:
             s.commit()
 
 
-def album_items(event_id: int, s: Session) -> list[photo_ai.Item]:
+def album_items(event_id: int, s: Session) -> tuple[list[photo_ai.Item], set[int]]:
+    """Analysed photos of the event, plus the ids of those that are videos (searchable, never duplicates)."""
     analyze_event(event_id)  # covers photos uploaded before the analysis existed or that failed earlier
-    rows = s.scalars(
-        select(PhotoFeature).join(Photo, Photo.id == PhotoFeature.photo_id)
+    rows = s.execute(
+        select(PhotoFeature, Photo.key).join(Photo, Photo.id == PhotoFeature.photo_id)
         .where(Photo.event_id == event_id).order_by(PhotoFeature.photo_id)
-    )
-    return [
-        photo_ai.Item(r.photo_id, r.phash, r.sharpness, r.pixels, r.taken_at and r.taken_at.timestamp(), r.embedding)
-        for r in rows
+    ).all()
+    items = [
+        photo_ai.Item(f.photo_id, f.phash, f.sharpness, f.pixels, f.taken_at and f.taken_at.timestamp(), f.embedding)
+        for f, _ in rows
     ]
+    return items, {f.photo_id for f, key in rows if is_video(key)}
+
+
+def duplicate_pairs(event_id: int, s: Session) -> tuple[list[photo_ai.Item], list[tuple[int, list[int]]]]:
+    items, videos = album_items(event_id, s)
+    return items, photo_ai.duplicate_groups([i for i in items if i.id not in videos])
 
 
 @api.get("/events/{event_id}/duplicates")
 def duplicates(event_id: int, user: User = Depends(current_user), s: Session = Depends(db)):
     """Near-duplicate groups: the sharpest shot is kept, the rest are listed as dropped."""
     member_event(event_id, user, s)
-    groups = [{"keep": keep, "drop": drop} for keep, drop in photo_ai.duplicate_groups(album_items(event_id, s))]
+    groups = [{"keep": keep, "drop": drop} for keep, drop in duplicate_pairs(event_id, s)[1]]
     return {"groups": groups, "hidden": sum(len(g["drop"]) for g in groups)}
 
 
@@ -440,10 +504,10 @@ def search_photos(
     user: User = Depends(current_user),
     s: Session = Depends(db),
 ):
-    """Photos matching a text query, best first. Duplicates are skipped unless `all` is set."""
+    """Photos and videos (by poster frame) matching a text query, best first. Duplicates are skipped unless `all` is set."""
     member_event(event_id, user, s)
-    items = album_items(event_id, s)
-    skip = set() if all else {d for _, drop in photo_ai.duplicate_groups(items) for d in drop}
+    items, groups = duplicate_pairs(event_id, s)
+    skip = set() if all else {d for _, drop in groups for d in drop}
     return {"results": [{"id": i, "score": round(score, 4)} for i, score in photo_ai.search_items(items, q.strip(), k, skip)]}
 
 

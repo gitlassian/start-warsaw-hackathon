@@ -18,14 +18,14 @@ async function Content({ params }: PageProps<"/e/[id]">) {
       <TopBar back="/" right={<Invite code={event.code} title={event.title} />} />
       <div className="px-4">
         {event.cover_url ? (
-          <img src={event.cover_url} alt="" className="aspect-[3/2] w-full rounded-3xl border border-line object-cover" />
+          <img src={event.cover_url} alt="" className="aspect-[3/2] w-full rounded-card border border-line object-cover" />
         ) : null}
-        <h1 className="mt-4 text-[26px] leading-tight font-semibold tracking-tight text-balance">{event.title}</h1>
+        <h1 className="mt-5 text-[26px] leading-tight font-semibold tracking-tight text-balance">{event.title}</h1>
         <p className="mt-1 text-muted">
           <When start={event.starts_at} end={event.ends_at} />
         </p>
-        {event.description ? <p className="mt-3 whitespace-pre-line">{event.description}</p> : null}
-        <h2 className="mt-8 mb-3 flex items-baseline justify-between font-semibold">
+        {event.description ? <p className="mt-4 whitespace-pre-line">{event.description}</p> : null}
+        <h2 className="mt-6 mb-3 flex items-baseline justify-between font-semibold">
           Photos <span className="text-sm font-normal text-muted tabular-nums">{count || ""}</span>
         </h2>
       </div>

@@ -29,7 +29,7 @@ export function CodeForm() {
         autoCapitalize="characters"
         spellCheck={false}
         placeholder="ABC123"
-        className="mt-4 h-16 w-full rounded-2xl border border-line bg-bg text-center font-mono text-3xl tracking-[0.3em] uppercase focus-visible:border-accent focus-visible:outline-none"
+        className="mt-4 h-16 w-full rounded-card border border-line bg-bg text-center font-mono text-3xl tracking-[0.3em] uppercase focus-visible:border-accent focus-visible:outline-none"
       />
       <p className="mt-4 text-center text-sm text-muted">Or scan the host’s QR code with your camera.</p>
       <BottomBar>

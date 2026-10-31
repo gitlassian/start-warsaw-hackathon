@@ -17,7 +17,7 @@ async function Content({ params }: PageProps<"/join/[code]">) {
       <TopBar back="/" title="Join event" />
       <div className="flex flex-1 flex-col justify-center px-4 text-center">
         {event.cover_url ? (
-          <img src={event.cover_url} alt="" className="aspect-[3/2] w-full rounded-3xl border border-line object-cover" />
+          <img src={event.cover_url} alt="" className="aspect-[3/2] w-full rounded-card border border-line object-cover" />
         ) : null}
         <h1 className="mt-5 text-[26px] leading-tight font-semibold tracking-tight text-balance">{event.title}</h1>
         <p className="mt-1 text-muted">

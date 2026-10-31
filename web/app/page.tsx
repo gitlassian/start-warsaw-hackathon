@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { Skeleton } from "@/components/skeleton";
 import Link from "next/link";
-import { ChevronRight, Images, Plus } from "@/components/icons";
+import { ChevronRight, Images, JoinIcon, Plus } from "@/components/icons";
 import { Account } from "@/components/account";
 import { BottomBar, TopBar } from "@/components/bars";
 import { Empty, EmptyRoll } from "@/components/empty";
@@ -22,11 +22,11 @@ async function Content() {
         <ul className="flex flex-col px-2">
           {events.map((e) => (
             <li key={e.id}>
-              <Link href={`/e/${e.id}`} className="flex items-center gap-3 rounded-2xl p-2 active:bg-surface">
-                {e.cover_url ? (
-                  <img src={e.cover_url} alt="" className="size-14 shrink-0 rounded-xl border border-line object-cover" />
+              <Link href={`/e/${e.id}`} className="flex items-center gap-3 rounded-card p-2 active:bg-surface">
+                {e.preview_url ? (
+                  <img src={e.preview_url} alt="" className="size-14 shrink-0 rounded-thumb border border-line object-cover" />
                 ) : (
-                  <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-surface text-faint">
+                  <span className="flex size-14 shrink-0 items-center justify-center rounded-thumb bg-surface text-faint">
                     <Images size={22} strokeWidth={1.5} />
                   </span>
                 )}
@@ -47,10 +47,10 @@ async function Content() {
         </Empty>
       )}
       <BottomBar>
-        <Link href="/join" className="btn btn-secondary flex-1">
-          Join
+        <Link href="/join" className="btn btn-secondary size-12 shrink-0 p-0" aria-label="Join event">
+          <JoinIcon size={22} />
         </Link>
-        <Link href="/new" className="btn btn-primary flex-[2]">
+        <Link href="/new" className="btn btn-primary flex-1">
           <Plus size={20} strokeWidth={1.75} /> New event
         </Link>
       </BottomBar>

@@ -57,7 +57,7 @@ export function EventForm() {
       }}
       className="flex flex-1 flex-col gap-5 px-4 pt-2"
     >
-      <label className="relative flex aspect-[3/2] cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-3xl border border-line bg-surface text-muted">
+      <label className="relative flex aspect-[3/2] cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-card border border-line bg-surface text-muted">
         {preview ? (
           <img src={preview} alt="Cover preview" className="absolute inset-0 size-full object-cover" />
         ) : (

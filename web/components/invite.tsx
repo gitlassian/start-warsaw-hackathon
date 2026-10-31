@@ -46,7 +46,7 @@ export function Invite({ code, title }: { code: string; title: string }) {
         </div>
         <p className="text-muted">Scan with the camera, or enter the code in RollCall.</p>
 
-        <div className="mx-auto mt-6 w-fit rounded-3xl border border-line bg-white p-5">
+        <div className="mx-auto mt-6 w-fit rounded-card border border-line bg-white p-5">
           {link ? <QRCodeSVG value={link} size={208} marginSize={0} title={`Join ${title}`} /> : <div className="size-52" />}
         </div>
         <button
