@@ -9,9 +9,13 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   // Let phones on the same network open the dev server (incl. HMR) via this machine's LAN IP.
-  allowedDevOrigins: Object.values(networkInterfaces())
-    .flat()
-    .flatMap((i) => (i?.family === "IPv4" ? [i.address] : [])),
+  allowedDevOrigins: [
+    "*.t.froti.dev", // https://<name>.t.froti.dev from the `tun` tunnel
+    "rollcall.froti.dev", // the public name of the demo
+    ...Object.values(networkInterfaces())
+      .flat()
+      .flatMap((i) => (i?.family === "IPv4" ? [i.address] : [])),
+  ],
   experimental: {
     // Reuse visited screens on client navigation; mutations and live updates still call router.refresh().
     staleTimes: { dynamic: 300 },

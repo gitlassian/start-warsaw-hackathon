@@ -10,6 +10,7 @@ import { DeleteDialog } from "@/components/delete-dialog";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { api } from "@/lib/client";
+import { useHydrated } from "@/lib/hydrated";
 import type { Photo, SearchResult } from "@/lib/types";
 import "./album.css";
 
@@ -53,6 +54,7 @@ export function Album({ eventId, photos: provided, hidden, upload }: {
   const [deletingMany, setDeletingMany] = useState<Photo[] | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
+  const hydrated = useHydrated(); // the viewer's language and time zone differ from the server's: draw their dates only after hydration
   const timeZone = useSyncExternalStore(subscribeTimeZone, viewerTimeZone, serverTimeZone);
   const addedAt = useMemo(() => new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium", timeStyle: "short", timeZone,
@@ -360,7 +362,7 @@ export function Album({ eventId, photos: provided, hidden, upload }: {
             </button>
             <div className="min-w-0 flex-1 text-center text-sm">
               <p className="truncate font-medium">{current?.author}</p>
-              {current ? <p className="text-white/60">Added {addedAt.format(new Date(current.created_at))}</p> : null}
+              {current && hydrated ? <p className="text-white/60">Added {addedAt.format(new Date(current.created_at))}</p> : null}
               <p className="text-white/60 tabular-nums">
                 {index + 1} of {photos.length}
               </p>

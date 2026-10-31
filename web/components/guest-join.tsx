@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { openInvitation } from "@/lib/client";
+import { fireConfetti } from "@/lib/confetti";
 import { AlbumSkeleton } from "@/components/skeleton";
 
 /** The invitation grants access. No sign-in or confirmation screen for guests. */
@@ -15,7 +16,11 @@ export function GuestJoin({ invitation }: { invitation: string }) {
   useEffect(() => {
     let active = true;
     openInvitation(invitation).then(
-      ({ code }) => { if (active) router.replace(`/e/${code}`); },
+      ({ code, joined }) => {
+        if (!active) return;
+        if (joined) fireConfetti(); // a new member only; the burst keeps falling over the album that opens behind it
+        router.replace(`/e/${code}`);
+      },
       (reason: Error) => { if (active) setError(reason.message); },
     );
     return () => { active = false; };

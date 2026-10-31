@@ -14,14 +14,14 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   return data;
 }
 
-const joining = new Map<string, Promise<{ id: number; code: string }>>();
+const joining = new Map<string, Promise<{ id: number; code: string; joined: boolean }>>();
 
 /** One request per invitation, even when React re-runs an effect before the cookie arrives. */
 export function openInvitation(invitation: string) {
   let request = joining.get(invitation);
   if (!request) {
     const resource = /^[A-Za-z0-9]{6}$/.test(invitation) ? "codes" : "invites";
-    request = api<{ id: number; code: string }>(`/api/${resource}/${encodeURIComponent(invitation)}/join`, { body: {} })
+    request = api<{ id: number; code: string; joined: boolean }>(`/api/${resource}/${encodeURIComponent(invitation)}/join`, { body: {} })
       .finally(() => joining.delete(invitation));
     joining.set(invitation, request);
   }

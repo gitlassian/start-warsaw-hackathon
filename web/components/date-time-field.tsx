@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Calendar, X } from "@/components/icons";
 import { day } from "@/components/when";
+import { useHydrated } from "@/lib/hydrated";
 import "./date-time-field.css";
 
 const ROW = 40; // px; keep in sync with .wheel in globals.css
@@ -155,6 +156,7 @@ export function DateTimeField({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState<Date | null>(null);
+  const hydrated = useHydrated();
 
   function open() {
     const d = new Date(value ?? suggest());
@@ -167,12 +169,12 @@ export function DateTimeField({
     <>
       <div className="flex min-w-0 flex-col gap-1.5">
         <span className="px-1 text-sm text-muted">{label}</span>
-        <button type="button" onClick={open} aria-label={value ? `${label}: ${day(value, new Date())}, ${time(value)}` : `${label}: choose`} className="field flex items-center gap-2.5">
+        <button type="button" onClick={open} aria-label={value ? (hydrated ? `${label}: ${day(value, new Date())}, ${time(value)}` : label) : `${label}: choose`} className="field flex items-center gap-2.5">
           <Calendar size={20} className="shrink-0 text-faint" />
           {value ? (
-            <span className="min-w-0 leading-tight tabular-nums" suppressHydrationWarning>
-              <span className="block truncate">{day(value, new Date())}</span>
-              <span className="block truncate text-sm text-muted">{time(value)}</span>
+            <span key={hydrated ? "viewer" : "server"} className="min-w-0 leading-tight tabular-nums" suppressHydrationWarning>
+              <span className="block truncate" suppressHydrationWarning>{day(value, new Date())}</span>
+              <span className="block truncate text-sm text-muted" suppressHydrationWarning>{time(value)}</span>
             </span>
           ) : (
             <span className="text-faint">Choose</span>

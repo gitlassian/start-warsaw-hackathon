@@ -843,10 +843,11 @@ def join_event(e: Event, request: Request, response: Response, user: User | None
         s.flush()
         # Serialize first visits to the same invitation in the browser; subsequent visits reuse this cookie.
         set_session(response, user)
-    if not s.get(Member, (e.id, user.id)):
+    created = not s.get(Member, (e.id, user.id))
+    if created:
         s.add(Member(event_id=e.id, user_id=user.id))
     s.commit()
-    return {"id": e.id, "code": e.code}
+    return {"id": e.id, "code": e.code, "joined": created}  # joined: this request added them, not a return visit
 
 
 @api.post("/codes/{code}/join")

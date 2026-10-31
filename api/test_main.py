@@ -113,8 +113,9 @@ def test_album_flow(setup):
     assert stranger.get(f"/api/events/{ev['id']}").status_code == 404
 
     assert guest.get(f"/api/codes/{ev['code'].lower()}").json()["joined"] is False
-    assert guest.post(f"/api/codes/{ev['code']}/join").json() == {"id": ev["id"], "code": ev["code"]}
-    assert guest.post(f"/api/codes/{ev['code']}/join").status_code == 200  # idempotent
+    assert guest.post(f"/api/codes/{ev['code']}/join").json() == {"id": ev["id"], "code": ev["code"], "joined": True}
+    # idempotent: a return visit is not a new join (the web app fires confetti only for a new one)
+    assert guest.post(f"/api/codes/{ev['code']}/join").json() == {"id": ev["id"], "code": ev["code"], "joined": False}
 
     up = guest.post("/api/uploads", json={"types": ["image/jpeg", "image/jpeg"]}).json()
     assert up[0]["url"].startswith("/s3/") and up[0]["key"].startswith("u/2/")

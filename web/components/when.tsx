@@ -1,5 +1,7 @@
 "use client";
 
+import { useHydrated } from "@/lib/hydrated";
+
 const DAY = 864e5;
 const date = new Intl.DateTimeFormat("en", { weekday: "short", day: "numeric", month: "short" });
 const dateYear = new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" });
@@ -31,10 +33,11 @@ export function formatWhen(start: Date, end: Date, now = new Date(), fullRange =
   return `${day(start, now)} ${time(start)} – ${day(end, now)} ${time(end)}`;
 }
 
-/** Rendered in the viewer's time zone; the server's guess is replaced on hydration. */
+/** Rendered in the viewer's time zone and language. The server's guess shows first; the new key replaces it once hydrated. */
 export function When({ start, end, fullRange = false }: { start: string; end: string; fullRange?: boolean }) {
+  const hydrated = useHydrated();
   return (
-    <time dateTime={start} suppressHydrationWarning>
+    <time key={hydrated ? "viewer" : "server"} dateTime={start} suppressHydrationWarning>
       {formatWhen(new Date(start), new Date(end), new Date(), fullRange)}
     </time>
   );
