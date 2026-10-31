@@ -114,6 +114,8 @@
     justify-content: center;
     width: 2.75rem;
     height: 2.75rem;
+    /* The ring shows the full 44px target, not just the glyph. */
+    border: 1px solid var(--line);
     border-radius: 9999px;
     cursor: pointer;
   }
@@ -290,6 +292,33 @@
     border: 0;
     background: #000;
     color: #fff;
+  }
+
+  /* iOS-style picker wheel: five 40px rows, the middle one is the value; edges fade out. */
+  .wheel {
+    height: 200px;
+    padding-block: 80px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-snap-type: y mandatory;
+    scrollbar-width: none;
+    mask-image: linear-gradient(transparent, #000 35%, #000 65%, transparent);
+  }
+  .wheel::-webkit-scrollbar {
+    display: none;
+  }
+  .wheel:focus-visible {
+    outline: none;
+  }
+  .wheel-item {
+    height: 40px;
+    line-height: 40px;
+    scroll-snap-align: center;
+    font-size: 1.25rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
   }
 }
 

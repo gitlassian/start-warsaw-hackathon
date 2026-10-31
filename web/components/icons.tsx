@@ -59,6 +59,15 @@ export const ImagePlus = icon(
   </>,
 );
 
+// A calendar page with one day marked by a dot.
+export const Calendar = icon(
+  <>
+    <rect x="4" y="5.5" width="16" height="14.5" rx="3" />
+    <path d="M8.5 3.5v4M15.5 3.5v4M4 10.5h16" />
+    {dot(12, 15.25, 1.4)}
+  </>,
+);
+
 export const Download = icon(<path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14" />);
 export const Share = icon(
   <path d="M12 3.5v11M8 7.5l4-4 4 4M8.5 10.5H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1.5" />,

@@ -7,11 +7,11 @@ const dateYear = new Intl.DateTimeFormat("en", { day: "numeric", month: "short",
 const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const hour = new Intl.DateTimeFormat(undefined, { hour: "numeric" });
 // "9 PM" rather than "9:00 PM"; 24h clocks keep the minutes, a bare "21" reads as a number.
-const time = (d: Date) => (clock.resolvedOptions().hour12 && !d.getMinutes() ? hour.format(d) : clock.format(d));
+export const time = (d: Date) => (clock.resolvedOptions().hour12 && !d.getMinutes() ? hour.format(d) : clock.format(d));
 
 const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
-function day(d: Date, now: Date) {
+export function day(d: Date, now: Date) {
   const diff = Math.round((midnight(d) - midnight(now)) / DAY);
   if (diff === 0) return "Today";
   if (diff === 1) return "Tomorrow";

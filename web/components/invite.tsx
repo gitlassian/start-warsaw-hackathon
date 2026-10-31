@@ -40,7 +40,7 @@ export function Invite({ code, title }: { code: string; title: string }) {
           <h2 id="invite-title" className="text-lg font-semibold">
             Invite people
           </h2>
-          <button onClick={() => dialog.current?.close()} className="btn-icon -mr-2" aria-label="Close">
+          <button onClick={() => dialog.current?.close()} className="btn-icon" aria-label="Close">
             <X size={22} strokeWidth={1.75} />
           </button>
         </div>

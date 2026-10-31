@@ -122,7 +122,7 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
             enterKeyHint="search"
           />
           {query ? (
-            <button type="button" onClick={clearSearch} className="btn-icon absolute top-1/2 right-0.5 -translate-y-1/2" aria-label="Clear search">
+            <button type="button" onClick={clearSearch} className="btn-icon absolute top-1/2 right-0.5 -translate-y-1/2 border-0" aria-label="Clear search">
               <X size={20} strokeWidth={1.75} />
             </button>
           ) : null}
@@ -166,7 +166,7 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
       <dialog ref={dialog} className="viewer" aria-label="Photo viewer">
         <div className="flex h-full flex-col">
           <div className="flex items-center gap-2 px-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-            <button onClick={() => dialog.current?.close()} className="btn-icon active:bg-white/10" aria-label="Close">
+            <button onClick={() => dialog.current?.close()} className="btn-icon border-white/15 active:bg-white/10" aria-label="Close">
               <X size={24} strokeWidth={1.75} />
             </button>
             <div className="min-w-0 flex-1 text-center text-sm">

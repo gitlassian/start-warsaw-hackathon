@@ -4,29 +4,31 @@ import { ImagePlus } from "@/components/icons";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { BottomBar } from "@/components/bars";
+import { DateTimeField, nextHour } from "@/components/date-time-field";
 import { api, uploadCover } from "@/lib/client";
 import type { EventItem } from "@/lib/types";
 
-// datetime-local wants "YYYY-MM-DDTHH:mm" in local time.
-const toLocalInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+const HOURS_3 = 3 * 3600000;
 
 export function EventForm() {
   const router = useRouter();
   const [cover, setCover] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  const [start, setStart] = useState<Date | null>(null);
+  const [end, setEnd] = useState<Date | null>(null);
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
-  function onStart(value: string) {
+  function onStart(value: Date) {
     setStart(value);
     // Keep the end sensible: default to three hours after the start.
-    if (value && (!end || end < value)) setEnd(toLocalInput(new Date(new Date(value).getTime() + 3 * 3600000)));
+    if (!end || end <= value) setEnd(new Date(value.getTime() + HOURS_3));
   }
 
   function submit(form: FormData) {
     setError("");
+    if (!start || !end) return setError("Choose when the event starts and ends.");
+    if (end <= start) return setError("The end must be after the start.");
     startTransition(async () => {
       try {
         const cover_key = cover ? await uploadCover(cover) : null;
@@ -34,8 +36,8 @@ export function EventForm() {
           body: {
             title: form.get("title"),
             description: form.get("description"),
-            starts_at: new Date(start).toISOString(),
-            ends_at: new Date(end).toISOString(),
+            starts_at: start.toISOString(),
+            ends_at: end.toISOString(),
             cover_key,
           },
         });
@@ -89,14 +91,13 @@ export function EventForm() {
       </label>
 
       <div className="grid grid-cols-2 gap-3">
-        <label className="flex min-w-0 flex-col gap-1.5">
-          <span className="px-1 text-sm text-muted">Starts</span>
-          <input type="datetime-local" required value={start} onChange={(e) => onStart(e.target.value)} className="field" />
-        </label>
-        <label className="flex min-w-0 flex-col gap-1.5">
-          <span className="px-1 text-sm text-muted">Ends</span>
-          <input type="datetime-local" required min={start} value={end} onChange={(e) => setEnd(e.target.value)} className="field" />
-        </label>
+        <DateTimeField label="Starts" value={start} onChange={onStart} suggest={nextHour} />
+        <DateTimeField
+          label="Ends"
+          value={end}
+          onChange={setEnd}
+          suggest={() => new Date((start ?? nextHour()).getTime() + HOURS_3)}
+        />
       </div>
 
       {error ? (

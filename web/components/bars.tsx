@@ -4,13 +4,13 @@ import { ChevronLeft } from "@/components/icons";
 export function TopBar({ back, title, right }: { back?: string; title?: React.ReactNode; right?: React.ReactNode }) {
   return (
     <header className="sticky top-0 z-10 bg-bg pt-[env(safe-area-inset-top)]">
-      <div className="flex h-14 items-center gap-1 px-2">
+      <div className="flex h-14 items-center gap-2 px-4">
         {back ? (
           <Link href={back} className="btn-icon" aria-label="Back">
             <ChevronLeft size={24} strokeWidth={1.75} />
           </Link>
         ) : null}
-        <div className="min-w-0 flex-1 truncate px-2 text-[17px] font-semibold">{title}</div>
+        <div className="min-w-0 flex-1 truncate text-[17px] font-semibold">{title}</div>
         {right}
       </div>
     </header>
