@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Search, Trash2, X } from "lucide-react";
+import { Download, Search, Trash2, X } from "@/components/icons";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { api } from "@/lib/client";

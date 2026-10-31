@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { Skeleton } from "@/components/skeleton";
 import Link from "next/link";
-import { ChevronRight, Images, Plus } from "lucide-react";
+import { ChevronRight, Images, Plus } from "@/components/icons";
 import { Account } from "@/components/account";
 import { BottomBar, TopBar } from "@/components/bars";
 import { When } from "@/components/when";

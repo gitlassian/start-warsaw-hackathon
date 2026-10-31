@@ -1,6 +1,6 @@
 "use client";
 
-import { ImagePlus } from "lucide-react";
+import { ImagePlus } from "@/components/icons";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { uploadPhoto } from "@/lib/client";

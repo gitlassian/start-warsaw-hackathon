@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, QrCode, Share, X } from "lucide-react";
+import { Check, Copy, QrCode, Share, X } from "@/components/icons";
 import { QRCodeSVG } from "qrcode.react";
 import { useRef, useState } from "react";
 

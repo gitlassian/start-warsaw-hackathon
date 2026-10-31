@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut } from "lucide-react";
+import { LogOut } from "@/components/icons";
 import { api } from "@/lib/client";
 import type { User } from "@/lib/types";
 
