@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronRight, Images, Plus } from "@/components/icons";
 import { Account } from "@/components/account";
 import { BottomBar, TopBar } from "@/components/bars";
+import { Empty, EmptyRoll } from "@/components/empty";
 import { When } from "@/components/when";
 import { apiGet } from "@/lib/server";
 import type { EventItem, User } from "@/lib/types";
@@ -41,10 +42,9 @@ async function Content() {
           ))}
         </ul>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
-          <p className="text-lg font-medium">No events yet</p>
-          <p className="mt-1 text-muted">Create one, or join with a code from the host.</p>
-        </div>
+        <Empty art={<EmptyRoll />} title="No events yet">
+          Create an event for your party, or join one with the code from the host.
+        </Empty>
       )}
       <BottomBar>
         <Link href="/join" className="btn btn-secondary flex-1">

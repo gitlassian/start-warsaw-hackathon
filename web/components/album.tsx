@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, Search, Trash2, X } from "@/components/icons";
+import { Empty, EmptyGrid } from "@/components/empty";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { api } from "@/lib/client";
@@ -99,11 +100,9 @@ export function Album({ eventId, photos: all }: { eventId: number; photos: Photo
 
   if (!all.length) {
     return (
-      <p className="px-4 py-16 text-center text-muted">
-        No photos yet.
-        <br />
-        Be the first to add some.
-      </p>
+      <Empty art={<EmptyGrid />} title="No photos yet">
+        Tap Add photos to start the roll. Everyone you invite can add theirs too.
+      </Empty>
     );
   }
 
