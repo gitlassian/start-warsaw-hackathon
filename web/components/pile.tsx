@@ -1,5 +1,7 @@
 "use client";
 
+import { ShimmerImage } from "@/components/shimmer-image";
+
 import { useEffect, useRef, useState } from "react";
 import "./pile.css";
 
@@ -83,9 +85,10 @@ export function Pile({ cover, label }: { cover: string | null; label: string }) 
             }
           >
             <span className="print-image">
-              <img
+              <ShimmerImage
                 src={src}
                 alt=""
+                className="size-full"
                 draggable={false}
                 fetchPriority={at >= count - 2 ? "high" : "low"}
               />

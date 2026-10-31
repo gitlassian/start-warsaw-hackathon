@@ -9,7 +9,7 @@ export function EmptyEvents() {
 
       <h1 id="empty-events-title" className="empty-state-title">Your first event starts here</h1>
       <p className="empty-state-description">
-        Create an event and invite your people. Everyone’s photos, together in one album.
+        Create an event and invite your people. Everyone’s photos, together in one album
       </p>
 
       <Link href="/join" className="empty-state-join">

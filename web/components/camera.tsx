@@ -15,6 +15,7 @@ export function Camera({ onShot, onClose }: { onShot: (file: File) => void; onCl
   const [error, setError] = useState("");
   const [shots, setShots] = useState(0);
   const [flash, setFlash] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => dialog.current?.showModal(), []);
 
@@ -22,7 +23,7 @@ export function Camera({ onShot, onClose }: { onShot: (file: File) => void; onCl
     let cancelled = false;
     (async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setError("The camera needs a secure (HTTPS) connection.");
+        setError("The camera needs a secure (HTTPS) connection");
         return;
       }
       try {
@@ -43,8 +44,8 @@ export function Camera({ onShot, onClose }: { onShot: (file: File) => void; onCl
         if (cancelled) return;
         setError(
           (e as DOMException).name === "NotAllowedError"
-            ? "Camera access is blocked. Allow it in your browser settings, or add photos from the gallery."
-            : "Couldn’t start the camera.",
+            ? "Camera access is blocked. Allow it in your browser settings, or add photos from the gallery"
+            : "Couldn’t start the camera",
         );
       }
     })();
@@ -77,9 +78,15 @@ export function Camera({ onShot, onClose }: { onShot: (file: File) => void; onCl
           ref={video}
           playsInline
           muted
+          onPlaying={() => setReady(true)}
           className="absolute inset-0 size-full object-cover"
           style={facing === "user" ? { transform: "scaleX(-1)" } : undefined}
         />
+        {!ready && !error ? (
+          <div className="shimmer absolute inset-0" role="status" aria-label="Starting camera" aria-busy="true">
+            <span className="sr-only">Starting camera</span>
+          </div>
+        ) : null}
         <div
           aria-hidden
           className={`pointer-events-none absolute inset-0 bg-white transition-opacity duration-150 ${flash ? "opacity-70" : "opacity-0"}`}
@@ -106,7 +113,7 @@ export function Camera({ onShot, onClose }: { onShot: (file: File) => void; onCl
           </button>
           <button
             onClick={shoot}
-            disabled={!!error}
+            disabled={!ready || !!error}
             aria-label="Take photo"
             className="flex size-[4.5rem] items-center justify-center rounded-full border-4 border-white p-1 transition-transform active:scale-95 disabled:opacity-40"
           >
@@ -114,7 +121,7 @@ export function Camera({ onShot, onClose }: { onShot: (file: File) => void; onCl
           </button>
           {canFlip ? (
             <button
-              onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))}
+              onClick={() => { setReady(false); setFacing((f) => (f === "environment" ? "user" : "environment")); }}
               className="btn-icon size-12 bg-black/50 active:bg-white/20"
               aria-label="Switch camera"
             >

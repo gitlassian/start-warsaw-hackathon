@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>RollCall</title>
+  <link rel="icon" href="assets/icon.svg">
+  <link rel="stylesheet" href="pitch.css">
+</head>
+<body>
+  <main class="viewer" aria-label="RollCall presentation">
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <section class="slide cover active" aria-label="1. Still asking for the party photos?" data-title="Still asking for the party photos?">
+          <img class="brand" src="assets/logo.svg" alt="RollCall">
+          <div class="cover-copy">
+            <h1>Still asking for<br>the party photos?</h1>
+            <p>Guests keep the photos<br>You have to ask for them</p>
+          </div>
+          <div class="cover-art" aria-hidden="true">
+            <div class="film film-a"></div><div class="film film-b"></div>
+            <div class="print cover-back"><img src="assets/confetti.webp" alt=""></div>
+            <div class="print cover-middle"><img src="assets/glitter.webp" alt=""></div>
+            <div class="print cover-front"><img src="assets/hug.webp" alt=""></div>
+          </div>
+        </section>
+
+        <section class="slide problem" aria-label="2. One shared album for your event" data-title="One shared album for your event">
+          <img class="brand" src="assets/logo.svg" alt="RollCall">
+          <h2>One shared album<br>for your event</h2>
+          <div class="scattered" aria-label="Create an album, share its QR code, and guests add their photos">
+            <figure class="scattered-one"><div class="print"><img src="assets/toast.webp" alt="Friends celebrating with a toast"></div><figcaption>Create an album</figcaption></figure>
+            <figure class="scattered-two"><div class="print"><img src="assets/laughing.webp" alt="A candid laugh at a party"></div><figcaption>Share its QR code</figcaption></figure>
+            <figure class="scattered-three"><div class="print"><img src="assets/candles.webp" alt="Birthday candles on a cake"></div><figcaption>Guests add photos</figcaption></figure>
+          </div>
+        </section>
+
+        <section class="slide solution" aria-label="3. One QR code, zero app installs" data-title="1 QR code · 0 app installs">
+          <img class="brand" src="assets/logo.svg" alt="RollCall">
+          <div class="solution-copy">
+            <h2>1 QR code<br>0 app installs</h2>
+            <p class="steps">Guests join in their browser</p>
+            <p class="support">Sign in with Google<br>Add photos, download originals</p>
+          </div>
+          <div class="solution-art">
+            <div class="film film-c" aria-hidden="true"></div>
+            <img class="app-shot" src="assets/join.png" alt="Actual RollCall join screen: a stack of photos, the event details and a Continue with Google button">
+          </div>
+        </section>
+
+        <section class="slide intelligence" aria-label="4. We hide similar photos" data-title="We hide similar photos">
+          <img class="brand" src="assets/logo.svg" alt="RollCall">
+          <div class="sorting-art" aria-label="Illustration of similar photos grouped behind one photo">
+            <div class="print similar similar-back"><img src="assets/sparklers.webp" alt=""></div>
+            <div class="print similar similar-middle"><img src="assets/sparklers.webp" alt=""></div>
+            <div class="print similar similar-front"><img src="assets/sparklers.webp" alt="A birthday celebration with sparklers"></div>
+          </div>
+          <div class="intelligence-copy">
+            <h2>We hide<br>similar photos</h2>
+            <div class="benefits">
+              <p>The best shot stays visible</p>
+              <p>Search for “birthday cake”</p>
+            </div>
+            <p class="support">Every original stays available</p>
+          </div>
+        </section>
+
+        <section class="slide demo" aria-label="5. Live demo" data-title="Live demo · 90 seconds">
+          <img class="brand" src="assets/logo.svg" alt="RollCall">
+          <div class="demo-copy">
+            <p class="demo-label">Live demo</p>
+            <h2>From QR scan<br>to shared photo</h2>
+            <p class="support">Watch it appear on the other phone</p>
+          </div>
+          <div class="demo-photo print"><img src="assets/cheers.webp" alt="Friends raising their glasses together"></div>
+          <div class="film film-d" aria-hidden="true"></div>
+        </section>
+
+      </div>
+    </div>
+    <nav class="toolbar" aria-label="Presentation controls">
+      <div class="navigation"><button id="prev" aria-label="Previous slide" title="Previous (←)">←</button><span id="counter" aria-live="polite">1 / 5</span><button id="next" aria-label="Next slide" title="Next (→ or Space)">→</button></div>
+      <div class="tools"><button id="notes-toggle" aria-expanded="false" aria-controls="notes" title="Speaker notes (N)">Notes <kbd>N</kbd></button><button id="overview-toggle" aria-expanded="false" title="All slides (O)">Overview <kbd>O</kbd></button><button id="fullscreen" title="Fullscreen (F)">Present <kbd>F</kbd></button></div>
+    </nav>
+  </main>
+  <aside class="notes" id="notes" hidden aria-label="Speaker notes">
+    <div class="notes-top"><span id="cue"></span><button id="notes-close" aria-label="Close speaker notes">×</button></div>
+    <h3 id="notes-title"></h3><p id="speech" lang="en"></p><p id="direction" class="direction" lang="ru"></p>
+    <div class="clock-row"><button id="timer-toggle" title="Start or pause the 3-minute rehearsal timer (T)">Start rehearsal</button><time id="timer">3:00</time><button id="timer-reset" aria-label="Reset timer">Reset</button></div>
+    <p class="keyboard-help">← → slides · N notes · O overview · F fullscreen · T timer</p>
+  </aside>
+  <dialog id="overview" aria-label="All slides"><div class="overview-top"><h3>RollCall</h3><button id="overview-close" aria-label="Close overview">×</button></div><div id="overview-grid"></div></dialog>
+  <div class="sr-only" aria-live="polite" id="announcement"></div>
+  <script src="pitch.js"></script>
+</body>
+</html>

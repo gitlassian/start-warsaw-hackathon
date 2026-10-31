@@ -26,7 +26,7 @@
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/01-sign-in.png" width="200" alt="Sign in"><br><sub>One tap with Google</sub></td>
-    <td align="center"><img src="docs/screenshots/03-join.png" width="200" alt="Joining by QR"><br><sub>What a guest sees after scanning</sub></td>
+    <td align="center"><img src="docs/screenshots/05-guest-access.jpg" width="200" alt="Guest album without sign-in"><br><sub>Guests open the album without an account</sub></td>
     <td align="center"><img src="docs/screenshots/02-album.png" width="200" alt="Shared album"><br><sub>One album, everyone's photos</sub></td>
     <td align="center"><img src="docs/screenshots/04-album-dark.png" width="200" alt="Dark mode"><br><sub>Dark mode</sub></td>
   </tr>
@@ -44,7 +44,7 @@ drop in their photos, and everyone can browse and save the full set afterwards. 
 
 | | Feature | Details |
 | --- | --- | --- |
-| 🎟️ | **Join in seconds** | Every event has a 6-character code and a QR that opens `/join/<CODE>`. A guest goes from scan to uploading in under a minute. |
+| 🎟️ | **Join without an account** | Every event has a 6-character code and a QR that opens `/join/<INVITE_TOKEN>`. The browser creates a guest session and opens the album automatically. No Google sign-in or separate join button for guests. |
 | 📸 | **Batch uploads** | Pick many photos at once, or shoot with the in-app camera. Photos and videos (up to 200 MB) upload straight to S3 with progress and plain failure messages. HEIC photos get a JPEG preview. |
 | 🗂️ | **One shared album** | Members see everything, and the album updates live as others upload. "Save" always downloads the **original**. |
 | 🔎 | **Search by meaning** | Type "dog", "sunset" or "laptop" (in 50+ languages) and CLIP finds matching photos, no tags needed. |
@@ -63,12 +63,24 @@ flowchart LR
   B -- "CLIP embeddings" --> E["Duplicates + search"]
 ```
 
-- **Auth:** our own "Continue with Google" button opens Google's OAuth popup (GIS token client) → `POST /api/auth/google`
-  checks the access token was issued to our client ID, reads the profile, and sets an httpOnly `session` cookie (JWT, 30 days).
-- **Uploads:** the browser asks `POST /api/uploads` for presigned PUT URLs, uploads the original plus a 600 px thumbnail
-  straight to S3, then registers the photo. Originals are kept.
-- **Joining:** each event has a 6-character code; the QR encodes `https://<host>/join/<CODE>`. Before signing in, a guest
-  sees only the cover and counts, never the photos.
+- **Auth:** hosts use "Continue with Google". `POST /api/auth/google` checks the token's client ID and verified profile,
+  then sets an httpOnly `session` cookie (JWT, 30 days). Guest invitations create a guest identity and the same kind of
+  cookie without Google. Signing in later preserves the guest's memberships and photo ownership.
+- **Uploads:** the browser asks `POST /api/uploads` for event-scoped upload targets, uploads the original plus a 600 px
+  thumbnail straight to S3, then registers the photo. Guest targets use signed POST policies with file-size limits.
+  The server checks event membership, upload permissions and ownership. The primary button opens the file picker directly.
+- **Joining:** the QR encodes `https://<host>/join/<INVITE_TOKEN>` with a random 192-bit token. The client POSTs to join,
+  receives its guest cookie, and opens the album. GET/prefetch alone never creates a guest or grants album access.
+  Legacy `/join/<CODE>` links and manual short codes still work. Anyone with a valid invitation can join; the host can
+  close new invitations, replace the QR link, or pause uploads in the invite panel.
+- **Guest limits:** 500 registered uploads per guest per event, 120 upload-target requests per guest per minute,
+  60 short-code join attempts per server-observed IP per minute, and 300 new guest identities per IP per minute.
+  Rate limits are in-memory per API process; a multi-worker deployment should use a shared limiter and trusted proxy IP configuration.
+- **Guest recovery:** the browser remembers authorship for 30 days. Clearing cookies or switching devices creates a new
+  guest identity; old photos remain, and the host can remove them. Signing in with Google on the original device preserves authorship.
+- **Database:** Alembic migrations run on API startup and preserve existing users, events, photos and memberships.
+  PostgreSQL migration startup uses a transaction-level advisory lock. To migrate explicitly, run
+  `cd api && uv run --env-file .env python migrate.py`.
 - **Smart album:** after each upload the API computes a perceptual hash, sharpness and a CLIP embedding per photo.
   Duplicates are grouped by hash or by "same moment + very similar embedding"; search embeds the query text into the same
   space and ranks by cosine similarity.
@@ -117,7 +129,7 @@ You need Docker, [`uv`](https://docs.astral.sh/uv/) and Node.js.
    cd api && uv run uvicorn main:app --reload --env-file .env --port 8000
    cd web && npm install && npm run dev                              # http://localhost:3000
    ```
-   Tables and the bucket are created on API start. The first start also downloads the CLIP models in the background.
+   Database migrations and bucket setup run on API start. The first start also downloads the CLIP models in the background.
 
 Run the API tests with `cd api && uv run pytest`.
 

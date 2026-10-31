@@ -1,4 +1,4 @@
-export type User = { id: number; name: string; email: string; picture: string | null };
+export type User = { id: number; name: string; email: string | null; picture: string | null; is_guest: boolean };
 
 export type EventItem = {
   id: number;
@@ -10,6 +10,10 @@ export type EventItem = {
   cover_url: string | null;
   preview_url: string | null; // the cover, else the newest photo
   is_owner: boolean;
+  viewer_is_guest: boolean;
+  invite_token: string | null;
+  invites_open: boolean;
+  uploads_open: boolean;
 };
 
 export type Photo = {
@@ -19,6 +23,8 @@ export type Photo = {
   thumb_url: string | null; // null: a video the browser couldn't take a poster frame from
   download_url: string;
   author: string;
+  author_id: number;
+  created_at: string;
   can_delete: boolean;
 };
 

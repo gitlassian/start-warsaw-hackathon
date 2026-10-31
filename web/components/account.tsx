@@ -2,6 +2,7 @@
 
 import { LogOut } from "@/components/icons";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
+import { ShimmerImage } from "@/components/shimmer-image";
 import { useRef, useState } from "react";
 import { api } from "@/lib/client";
 import type { User } from "@/lib/types";
@@ -20,7 +21,7 @@ export function Account({ user }: { user: User }) {
     <>
       <button ref={trigger} type="button" popoverTarget="account" className="btn-icon" aria-label="Account">
         {user.picture ? (
-          <img src={user.picture} alt="" referrerPolicy="no-referrer" className="size-8 rounded-full" />
+          <ShimmerImage src={user.picture} alt="" referrerPolicy="no-referrer" className="size-8 rounded-full" />
         ) : (
           <span className="flex size-8 items-center justify-center rounded-full bg-surface text-sm font-medium">
             {user.name[0]}
@@ -35,7 +36,8 @@ export function Account({ user }: { user: User }) {
       >
         <div className="px-3 py-2">
           <p className="truncate font-medium">{user.name}</p>
-          <p className="truncate text-sm text-muted">{user.email}</p>
+          <p className="truncate text-sm text-muted">{user.is_guest ? "Guest on this device" : user.email}</p>
+          {user.is_guest ? <a href="/login" className="mt-2 block text-sm text-accent">Sign in with Google to host an event</a> : null}
         </div>
         <button
           type="button"
@@ -61,7 +63,9 @@ export function Account({ user }: { user: User }) {
             trigger.current?.focus();
           }}
         >
-          You’ll be signed out of RollCall on this device. Your events, photos and videos will stay safe.
+          {user.is_guest
+            ? "Your photos will stay in the album, but you won’t be able to delete your previous uploads after signing out"
+            : "You’ll be signed out of RollCall on this device. Your events, photos and videos will stay safe"}
         </ConfirmationDialog>
       ) : null}
     </>

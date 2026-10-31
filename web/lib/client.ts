@@ -1,3 +1,7 @@
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
 /** Browser-side call to FastAPI through the /api rewrite. Throws with the server's message. */
 export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(path, {
@@ -6,8 +10,22 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Something went wrong. Try again.");
+  if (!res.ok) throw new ApiError(typeof data.detail === "string" ? data.detail : "Something went wrong. Try again", res.status);
   return data;
+}
+
+const joining = new Map<string, Promise<{ id: number; code: string }>>();
+
+/** One request per invitation, even when React re-runs an effect before the cookie arrives. */
+export function openInvitation(invitation: string) {
+  let request = joining.get(invitation);
+  if (!request) {
+    const resource = /^[A-Za-z0-9]{6}$/.test(invitation) ? "codes" : "invites";
+    request = api<{ id: number; code: string }>(`/api/${resource}/${encodeURIComponent(invitation)}/join`, { body: {} })
+      .finally(() => joining.delete(invitation));
+    joining.set(invitation, request);
+  }
+  return request;
 }
 
 /** Downscale for thumbnails and covers so the grid stays light on mobile data. */
@@ -24,13 +42,21 @@ async function resize(file: Blob, max: number): Promise<Blob> {
   return blob;
 }
 
-async function putAll(blobs: Blob[]): Promise<string[]> {
-  const targets = await api<{ key: string; url: string }[]>("/api/uploads", {
-    body: { types: blobs.map((b) => b.type) },
+async function putAll(blobs: Blob[], eventId?: number): Promise<string[]> {
+  const targets = await api<{ key: string; url: string; fields?: Record<string, string> }[]>("/api/uploads", {
+    body: { types: blobs.map((b) => b.type), sizes: blobs.map((b) => b.size), event_id: eventId },
   });
   await Promise.all(
     targets.map(async (t, i) => {
-      const res = await fetch(t.url, { method: "PUT", body: blobs[i], headers: { "content-type": blobs[i].type } });
+      let res: Response;
+      if (t.fields) {
+        const form = new FormData();
+        Object.entries(t.fields).forEach(([key, value]) => form.append(key, value));
+        form.append("file", blobs[i]);
+        res = await fetch(t.url, { method: "POST", body: form });
+      } else {
+        res = await fetch(t.url, { method: "PUT", body: blobs[i], headers: { "content-type": blobs[i].type } });
+      }
       if (!res.ok) throw new Error("Upload failed");
     }),
   );
@@ -79,9 +105,20 @@ export async function uploadCover(file: File): Promise<string> {
   return key;
 }
 
-export async function uploadPhoto(eventId: number, file: File) {
+export async function uploadPhoto(eventId: number, file: File, guestInvitation?: string) {
+  const maximum = (isVideo(file) ? 200 : 50) * 1024 * 1024;
+  if (file.size > maximum) throw new Error(`This file is larger than ${maximum / 1024 / 1024} MB`);
   // undecodable here (HEIC or HEVC on Chrome): the server makes the thumbnail, or the grid shows a placeholder
   const thumb = await (isVideo(file) ? videoPoster(file, 600) : resize(file, 600)).catch(() => null);
-  const [key, thumbKey = key] = await putAll(thumb ? [typed(file), thumb] : [typed(file)]);
-  return api(`/api/events/${eventId}/photos`, { body: { key, thumb_key: thumbKey } });
+  const send = async () => {
+    const [key, thumbKey = key] = await putAll(thumb ? [typed(file), thumb] : [typed(file)], eventId);
+    return api(`/api/events/${eventId}/photos`, { body: { key, thumb_key: thumbKey } });
+  };
+  try {
+    return await send();
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 401 || !guestInvitation) throw error;
+    await openInvitation(guestInvitation);
+    return send();
+  }
 }

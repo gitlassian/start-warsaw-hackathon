@@ -7,7 +7,7 @@ export function EmptyAlbum() {
       <h3 id="empty-album-title" className="empty-state-title">Be the first to add a photo</h3>
       <p className="empty-state-description">
         Tap <span className="font-medium text-fg">Add photos &amp; videos</span> to start the album.
-        Everyone you invite can add theirs too.
+        Everyone you invite can add theirs too
       </p>
     </section>
   );

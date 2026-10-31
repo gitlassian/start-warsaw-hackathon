@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { TopBar } from "@/components/bars";
 import { EventForm } from "@/components/event-form";
-import { Skeleton } from "@/components/skeleton";
+import { EventFormSkeleton } from "@/components/skeleton";
 import { eventByCode } from "@/lib/server";
 
 async function Content({ params }: PageProps<"/e/[code]/edit">) {
@@ -20,7 +20,7 @@ async function Content({ params }: PageProps<"/e/[code]/edit">) {
 
 export default function EditEvent(props: PageProps<"/e/[code]/edit">) {
   return (
-    <Suspense fallback={<Skeleton />}>
+    <Suspense fallback={<EventFormSkeleton editing />}>
       <Content {...props} />
     </Suspense>
   );
