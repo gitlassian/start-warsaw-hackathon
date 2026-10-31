@@ -70,6 +70,8 @@ export const Calendar = icon(
   </>,
 );
 
+export const Pencil = icon(<path d="M5 19l1.2-4.3L15.6 5.3a2.1 2.1 0 0 1 3 3L9.3 17.8 5 19ZM13.8 7.2l3 3" />);
+
 export const Download = icon(<path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14" />);
 export const Share = icon(
   <path d="M12 3.5v11M8 7.5l4-4 4 4M8.5 10.5H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1.5" />,

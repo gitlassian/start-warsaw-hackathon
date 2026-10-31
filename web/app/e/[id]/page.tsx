@@ -1,4 +1,6 @@
 import { Suspense } from "react";
+import Link from "next/link";
+import { Pencil } from "@/components/icons";
 import { Skeleton } from "@/components/skeleton";
 import { Album } from "@/components/album";
 import { BottomBar, TopBar } from "@/components/bars";
@@ -15,7 +17,19 @@ async function Content({ params }: PageProps<"/e/[id]">) {
 
   return (
     <>
-      <TopBar back="/" right={<Invite code={event.code} title={event.title} />} />
+      <TopBar
+        back="/"
+        right={
+          <div className="flex gap-2">
+            {event.is_owner ? (
+              <Link href={`/e/${event.id}/edit`} className="btn-icon" aria-label="Edit event">
+                <Pencil size={22} strokeWidth={1.75} />
+              </Link>
+            ) : null}
+            <Invite code={event.code} title={event.title} />
+          </div>
+        }
+      />
       <div className="px-4">
         {event.cover_url ? (
           <img src={event.cover_url} alt="" className="aspect-[3/2] w-full rounded-card border border-line object-cover" />

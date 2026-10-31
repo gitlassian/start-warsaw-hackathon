@@ -135,6 +135,41 @@ def test_album_flow(setup):
     assert [e["id"] for e in guest.get("/api/events").json()] == [ev["id"]]
 
 
+
+def test_host_edits_and_deletes_event(setup):
+    owner, guest, stranger = setup(1), setup(2), setup(3)
+    cover = owner.post("/api/uploads", json={"types": ["image/jpeg"]}).json()[0]["key"]
+    ev = owner.post("/api/events", json={**EVENT, "cover_key": cover}).json()
+    guest.post(f"/api/codes/{ev['code']}/join")
+    edit = {**EVENT, "title": " Party 2 ", "description": "Bring snacks"}
+
+    assert guest.put(f"/api/events/{ev['id']}", json=edit).status_code == 403
+    assert stranger.put(f"/api/events/{ev['id']}", json=edit).status_code == 404
+    assert owner.put(f"/api/events/{ev['id']}", json={**edit, "ends_at": "2026-11-01T17:00:00Z"}).status_code == 422
+    assert owner.put(f"/api/events/{ev['id']}", json={**edit, "cover_key": "u/2/x.jpg"}).status_code == 400
+
+    # Saving without a new cover keeps the old one.
+    out = owner.put(f"/api/events/{ev['id']}", json=edit).json()
+    assert (out["title"], out["description"], out["code"]) == ("Party 2", "Bring snacks", ev["code"])
+    assert cover in out["cover_url"] and main.s3.deleted == []
+
+    new_cover = owner.post("/api/uploads", json={"types": ["image/jpeg"]}).json()[0]["key"]
+    assert new_cover in owner.put(f"/api/events/{ev['id']}", json={**edit, "cover_key": new_cover}).json()["cover_url"]
+    assert main.s3.deleted == [cover]
+    assert owner.put(f"/api/events/{ev['id']}", json={**edit, "remove_cover": True}).json()["cover_url"] is None
+    assert main.s3.deleted == [cover, new_cover]
+
+    photo = upload(guest, ev["id"], scene(1, 0))
+    assert guest.delete(f"/api/events/{ev['id']}").status_code == 403
+    assert stranger.delete(f"/api/events/{ev['id']}").status_code == 404
+    assert owner.delete(f"/api/events/{ev['id']}").status_code == 200
+    assert len(main.s3.deleted) == 3  # the photo's one key on top of the two old covers
+    assert guest.get(f"/api/events/{ev['id']}").status_code == 404
+    assert guest.get("/api/events").json() == [] and owner.get("/api/events").json() == []
+    with main.SessionLocal() as s:
+        assert s.get(main.Photo, photo) is None and s.scalar(main.select(main.PhotoFeature)) is None
+
+
 def upload(client, event_id, data):
     """Register a photo the way the web app does; its bytes sit in the fake bucket."""
     key = client.post("/api/uploads", json={"types": ["image/jpeg"]}).json()[0]["key"]

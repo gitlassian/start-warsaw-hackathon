@@ -15,7 +15,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException,
 from PIL import Image, ImageOps
 from pydantic import AwareDatetime, BaseModel, Field
 import requests
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, LargeBinary, String, Text, create_engine, func, select
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, LargeBinary, String, Text, create_engine, delete, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 import photo_ai
@@ -365,6 +365,53 @@ def get_event(event_id: int, user: User = Depends(current_user), s: Session = De
         .where(Photo.event_id == e.id).order_by(Photo.created_at.desc())
     )
     return {**event_out(e, user), "photos": [photo_out(p, a, user, e) for p, a in rows]}
+
+
+def owned_event(event_id: int, user: User, s: Session) -> Event:
+    e = member_event(event_id, user, s)
+    if e.owner_id != user.id:
+        raise HTTPException(403, "Only the host can change this event")
+    return e
+
+
+class EventEdit(EventIn):
+    remove_cover: bool = False  # cover_key replaces the cover; this drops it
+
+
+@api.put("/events/{event_id}")
+def update_event(event_id: int, body: EventEdit, user: User = Depends(current_user), s: Session = Depends(db)):
+    e = owned_event(event_id, user, s)
+    if body.ends_at < body.starts_at:
+        raise HTTPException(422, "The event can't end before it starts")
+    if body.cover_key and body.cover_key != e.cover_key:
+        check_upload(body.cover_key, user)
+    if (body.cover_key and body.cover_key != e.cover_key) or body.remove_cover:
+        if e.cover_key:
+            s3.delete_object(Bucket=S3_BUCKET, Key=e.cover_key)
+        e.cover_key = None if body.remove_cover else body.cover_key
+    e.title = body.title.strip()
+    e.description = body.description.strip()
+    e.starts_at = body.starts_at
+    e.ends_at = body.ends_at
+    s.commit()
+    return event_out(e, user)
+
+
+@api.delete("/events/{event_id}")
+def delete_event(event_id: int, user: User = Depends(current_user), s: Session = Depends(db)):
+    e = owned_event(event_id, user, s)
+    photos = s.scalars(select(Photo).where(Photo.event_id == e.id)).all()
+    # shortcut: one S3 call per object; switch to delete_objects batches for albums in the thousands.
+    for key in {k for p in photos for k in (p.key, p.thumb_key, view_key(p.key))} | ({e.cover_key} if e.cover_key else set()):
+        s3.delete_object(Bucket=S3_BUCKET, Key=key)
+    # Explicit child deletes: SQLite (tests) doesn't enforce ON DELETE CASCADE.
+    ids = [p.id for p in photos]
+    s.execute(delete(PhotoFeature).where(PhotoFeature.photo_id.in_(ids)))
+    s.execute(delete(Photo).where(Photo.event_id == e.id))
+    s.execute(delete(Member).where(Member.event_id == e.id))
+    s.delete(e)
+    s.commit()
+    return {"ok": True}
 
 
 class PhotoIn(BaseModel):
